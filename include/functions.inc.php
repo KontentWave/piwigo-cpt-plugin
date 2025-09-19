@@ -1,0 +1,4 @@
+<?php
+defined('CORE_PRIVACY_TOGGLE_PATH') or die('Hacking attempt!');
+
+// you can add something here :-)
