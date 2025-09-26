@@ -40,6 +40,9 @@ define('CORE_PRIVACY_TOGGLE_ADMIN',   get_root_url() . 'admin.php?page=plugin-' 
 define('CORE_PRIVACY_TOGGLE_PUBLIC',  get_absolute_root_url() . make_index_url(array('section' => 'core_privacy_toggle')) . '/');
 define('CORE_PRIVACY_TOGGLE_DIR',     PHPWG_ROOT_PATH . PWG_LOCAL_DIR . 'core_privacy_toggle/');
 
+// Ensure core helper functions loaded (needed for early profile hook)
+require_once CORE_PRIVACY_TOGGLE_PATH . 'include/functions.inc.php';
+
 
 
 // +-----------------------------------------------------------------------+
@@ -47,6 +50,10 @@ define('CORE_PRIVACY_TOGGLE_DIR',     PHPWG_ROOT_PATH . PWG_LOCAL_DIR . 'core_pr
 // +-----------------------------------------------------------------------+
 // init the plugin
 add_event_handler('init', 'core_privacy_toggle_init');
+
+// user profile enhancement (UCP) - album management tabs (progressive enhancement)
+add_event_handler('loc_begin_profile', 'cpt_setup_ucp_tabs');
+// Safety net: if early POST handling somehow missed (theme workflow), run a late check
 
 /*
  * this is the common way to define event functions: create a new function for each event you want to handle
@@ -76,27 +83,7 @@ if (defined('IN_ADMIN'))
   add_event_handler('element_set_global_action', 'core_privacy_toggle_element_set_global_action',
     EVENT_HANDLER_PRIORITY_NEUTRAL, $admin_file);
 }
-else
-{
-  // file containing all public handlers functions
-  $public_file = CORE_PRIVACY_TOGGLE_PATH . 'include/public_events.inc.php';
-
-  // add a public section
-  add_event_handler('loc_end_section_init', 'core_privacy_toggle_loc_end_section_init',
-    EVENT_HANDLER_PRIORITY_NEUTRAL, $public_file);
-  add_event_handler('loc_end_index', 'core_privacy_toggle_loc_end_page',
-    EVENT_HANDLER_PRIORITY_NEUTRAL, $public_file);
-
-  // add button on album and photos pages
-  add_event_handler('loc_end_index', 'core_privacy_toggle_add_button',
-    EVENT_HANDLER_PRIORITY_NEUTRAL, $public_file);
-  add_event_handler('loc_end_picture', 'core_privacy_toggle_add_button',
-    EVENT_HANDLER_PRIORITY_NEUTRAL, $public_file);
-
-  // prefilter on photo page
-  add_event_handler('loc_end_picture', 'core_privacy_toggle_loc_end_picture',
-    EVENT_HANDLER_PRIORITY_NEUTRAL, $public_file);
-}
+// Public section/menu features from starter template are disabled for MVP to avoid extra nav entries.
 
 // file containing API function
 $ws_file = CORE_PRIVACY_TOGGLE_PATH . 'include/ws_functions.inc.php';
@@ -113,15 +100,10 @@ add_event_handler('ws_add_methods', 'core_privacy_toggle_ws_add_methods',
 // file containing the class for menu handlers functions
 $menu_file = CORE_PRIVACY_TOGGLE_PATH . 'include/menu_events.class.php';
 
-// add item to existing menu (EVENT_HANDLER_PRIORITY_NEUTRAL+10 is for compatibility with Advanced Menu Manager plugin)
-add_event_handler('blockmanager_apply', array('CorePrivacyToggleMenu', 'blockmanager_apply1'),
-  EVENT_HANDLER_PRIORITY_NEUTRAL+10, $menu_file);
-
-// add a new menu block (the declaration must be done every time, in order to be able to manage the menu block in "Menus" screen and Advanced Menu Manager)
-add_event_handler('blockmanager_register_blocks', array('CorePrivacyToggleMenu', 'blockmanager_register_blocks'),
-  EVENT_HANDLER_PRIORITY_NEUTRAL, $menu_file);
-add_event_handler('blockmanager_apply', array('CorePrivacyToggleMenu', 'blockmanager_apply2'),
-  EVENT_HANDLER_PRIORITY_NEUTRAL, $menu_file);
+// Menu block handlers disabled for MVP (avoid adding extra menu entries)
+// add_event_handler('blockmanager_apply', array('CorePrivacyToggleMenu', 'blockmanager_apply1'), EVENT_HANDLER_PRIORITY_NEUTRAL+10, $menu_file);
+// add_event_handler('blockmanager_register_blocks', array('CorePrivacyToggleMenu', 'blockmanager_register_blocks'), EVENT_HANDLER_PRIORITY_NEUTRAL, $menu_file);
+// add_event_handler('blockmanager_apply', array('CorePrivacyToggleMenu', 'blockmanager_apply2'), EVENT_HANDLER_PRIORITY_NEUTRAL, $menu_file);
 
 // NOTE: blockmanager_apply1() and blockmanager_apply2() can (must) be merged
 

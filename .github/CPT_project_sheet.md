@@ -2,85 +2,90 @@
 
 This document is the living technical specification for the "Core Privacy Toggle" plugin. It will be updated as development progresses.
 
-### Phase 1 (MVP): UCP Album Management & Core Privacy Toggle (Draft)
+### Phase 1 (MVP): UCP Album Management & Core Privacy Toggle (Updated Draft)
 
 #### `Action`
 
 Empower non-admin gallery owners by integrating album management controls (name, description, privacy, and representative image) directly into their User Control Panel (UCP), enhancing self-sufficiency and reducing administrative overhead.
 
-### `Task`
+#### Design Evolution Note
 
-This is the sequential plan to implement the feature.
+Initial concept used an ARIA tabbed interface. During integration with varied themes (e.g. Bootstrap Darkroom) we simplified to a progressive enhancement that injects a single structured fieldset section ("My Galleries") into the existing profile form. This reduced fragility, avoided layout clashes, and preserved full functionality with JavaScript disabled (the section simply does not appear when no albums qualify).
 
-1.  **Plugin Structure Setup:**
+### `Task` (Current Implementation Plan)
 
-    - Create the plugin directory `core_privacy_toggle/`.
-    - Inside, create `main.inc.php`, `template/`, and a new `js/` directory.
+1. **Plugin Skeleton**: `core_privacy_toggle/` with `main.inc.php`, `include/`, `template/`, `language/`, `js/`.
+2. **Profile Hook**: `add_event_handler('loc_begin_profile', 'cpt_setup_ucp_tabs');` (legacy name retained for compatibility; function now injects a section not tabs).
+3. **Ownership Detection**:
+   - Preferred: `categories.user_id` (Community plugin supplied).
+   - Fallback (when column absent): treat albums as editable if all images within an album were uploaded by the current user ("exclusive contributor" heuristic).
+4. **Album Data Fetch**:
+   - Collect `id, name, comment, status` for qualifying albums.
+   - Skip enhancement if none found (baseline page untouched).
+5. **Template Partial**: `template/ucp_album_manager.tpl` renders only input controls (loop). No outer form wrapper. Escapes output.
+6. **Progressive Enhancement Injection**:
+   - PHP renders partial to string and exports via inline script (`window.CPT_ALBUM_HTML`).
+   - JS (`js/ucp_tabs.js`) on DOM ready locates the profile form with robust selectors and inserts a `<fieldset class="cpt-section">` containing the partial before the submit block (or appended at end).
+7. **Submission Handling**:
+   - On POST, iterate `$_POST['cpt_album']` entries, validate ownership (preferred or fallback), apply sanitized updates (name, comment, privacy status). Add info message upon success.
+8. **Privacy Toggle**:
+   - Checkbox -> `status=private`; absence -> `status=public`.
+   - (Representative image selection deferred to later phase.)
+9. **Internationalization**: All UI strings routed through translation files; legend key `My Galleries` exported separately.
+10. **Fallback Messaging**:
 
-2.  **Hook into the User Profile Page:**
+- Admin hint if ownership column missing.
+- User-visible limited mode banner when only fallback albums are shown.
 
-    - In `main.inc.php`, use `add_event_handler('loc_begin_profile', 'commplus_setup_ucp_tabs');` to prepare and inject our new functionality.
+### Accessibility
 
-3.  **Conditional Logic (within `ctp_setup_ucp_tabs`):**
+Simplified section requires standard form semantics only:
 
-    - Get the current `user_id`.
-    - Query the `CATEGORIES_TABLE` to get a **count** of albums owned by the user.
-    - **If the user owns zero albums, the function stops here.** The UI remains unchanged for them.
+- Fieldset + legend provide grouping.
+- Labels bound via `for` / `id`.
+- No custom widgets means no additional ARIA roles required.
+- Future representative image selector (Phase 1 extension or Phase 2) must maintain keyboard operability.
 
-4.  **Prepare and Inject Tab Content:**
+### Security & Validation
 
-    - If the user owns albums, fetch the full album data (id, name, comment, status).
-    - Assign the album data to a Smarty template variable (`UCP_ALBUMS`).
-    - Parse the album management form from a template file (`template/ucp_album_manager.tpl`) into a PHP variable.
-    - Use Piwigo's `combine_script` function to:
-      - Pass the parsed HTML content to the frontend as a JavaScript variable.
-      - Load a new JavaScript file: `js/ucp_tabs.js`.
+- Server is sole authority: each album update gated by ownership / exclusive-contributor check.
+- SQL built with escaped values; status constrained to allowed set.
+- Early returns keep logic small and auditable.
 
-5.  **Create the Tab Interface with JavaScript (`js/ucp_tabs.js`):**
+### Testing Plan (Adjusted)
 
-    - This script will execute on the profile page to **dynamically restructure the UI**.
-    - On page load, it will find the main profile form (`#profile`).
-    - It will create the necessary HTML for a tabbed interface (e.g., a `<ul>` for tab navigation and `<div>` containers for tab content).
-    - It will **move the existing profile form elements** into the first tab panel, labeled "Profile".
-    - It will inject our new album management form HTML (passed from PHP) into the second tab panel, labeled "My Galleries".
-    - It will add click event listeners to the tabs to handle showing and hiding the correct content panel.
+**PHPUnit**
 
-6.  **Create the Album Manager UI Template (`template/ucp_album_manager.tpl`):**
+1. Retrieval (direct ownership) returns only expected albums when `user_id` column present.
+2. Retrieval (fallback) returns only exclusive contributor albums when column absent.
+3. Unauthorized update attempt rejected (no side effects) for both ownership modes.
+4. Data update persists name & comment (UTF-8 + length edge cases).
+5. Privacy toggle transitions (public ↔ private) correctly update status.
 
-    - This file now _only_ contains the form elements for managing the albums (the loop, text inputs, textareas, and checkboxes). It does not contain any surrounding `<fieldset>` or submit button, as it will be injected into the main profile form.
+**Cypress / E2E**
 
-7.  **Submission Handling (within `commplus_setup_ucp_tabs`):**
-    - The logic for saving the form data remains the same. It checks for `$_POST` data, iterates through submitted values, performs the security ownership check for each album, and updates the database accordingly.
+1. Owner sees "My Galleries" section (not tabs) when they have qualifying albums.
+2. Limited mode banner appears when using fallback heuristic.
+3. Editing name + description + privacy and submitting shows success notice and persists after reload.
+4. Private album hidden from another (non-owner) user after save.
+5. Album made public again becomes visible to other user.
+6. User with no qualifying albums sees no section.
 
-#### `Accessibility (ARIA)`
+### Deferred / Out of Scope (for MVP)
 
-The dynamically created tab interface must be fully accessible.
+- Representative image selection UI.
+- Bulk permission artifact adjustments beyond status flag.
+- Advanced pagination or search across large album sets.
+- Full ARIA tab widget (replaced by simpler section).
 
-- The tab list (`<ul>`) will have `role="tablist"`.
-- Each tab control (`<li>` or `<a>`) within the list will have `role="tab"` and an `aria-controls` attribute pointing to the ID of its corresponding panel.
-- The active tab will have `aria-selected="true"`.
-- Each tab content panel (`<div>`) will have `role="tabpanel"` and an `aria-labelledby` attribute pointing to the ID of its controlling tab.
-- Inactive tab panels will be hidden using the `hidden` attribute or `display: none;`.
+### Operational Notes
 
-#### `Test` Plan
+- Asset injection uses both head and footer regions with a guard to survive theme variance.
+- Fallback may be replaced by native ownership once Community (or another plugin) populates `categories.user_id`.
+- Clearing template cache or hard-refresh may be needed after deploying updated JS or template partials.
 
-This plan uses a combination of **PHPUnit** for backend unit tests and **Cypress** for frontend end-to-end (E2E) tests to ensure full coverage.
+### Future Considerations
 
-**PHPUnit (Unit & Integration Tests - The "Inner Loop")**
-
-1.  **Test Owner Albums Retrieval:** Verify that the function fetching albums for the UCP returns _only_ the albums owned by the specified user.
-2.  **Test Save Action - Ownership Security:** Verify that the save logic explicitly rejects any attempt to modify an album by a user who is not its owner.
-3.  **Test Save Action - Data Update:** Verify that submitting the form correctly updates the `name` and `description` in the database.
-4.  **Test Privacy Toggle - Make Private:** Verify that checking the privacy box correctly changes the album's `status` to `private` and updates permissions.
-5.  **Test Privacy Toggle - Make Public:** Verify that unchecking a previously private album's box correctly changes its `status` back to `public`.
-
-**Cypress (End-to-End Test - The "Outer Loop")**
-
-1.  **Full User Workflow Test:**
-    - It logs in as an album owner.
-    - It navigates to the profile page and confirms the "Profile" and "My Galleries" tabs are present.
-    - It clicks the "My Galleries" tab.
-    - It successfully changes an album's name and checks the "private" box.
-    - It submits the form and verifies the success message.
-    - It logs out and logs in as a different, non-admin user.
-    - It confirms the modified album is no longer visible in the main gallery.
+- Introduce a migration routine to add `user_id` to categories if absent (opt-in) for installations that want first-class ownership.
+- Add representative image selection via thumbnail chooser with lazy loading.
+- Provide REST/WebService endpoints mirroring the profile functionality for SPA or mobile clients.
