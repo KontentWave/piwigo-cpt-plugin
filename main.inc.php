@@ -39,6 +39,8 @@ define('CORE_PRIVACY_TOGGLE_TABLE',   $prefixeTable . 'core_privacy_toggle');
 define('CORE_PRIVACY_TOGGLE_ADMIN',   get_root_url() . 'admin.php?page=plugin-' . CORE_PRIVACY_TOGGLE_ID);
 define('CORE_PRIVACY_TOGGLE_PUBLIC',  get_absolute_root_url() . make_index_url(array('section' => 'core_privacy_toggle')) . '/');
 define('CORE_PRIVACY_TOGGLE_DIR',     PHPWG_ROOT_PATH . PWG_LOCAL_DIR . 'core_privacy_toggle/');
+// Debug flag (set to true only during development)
+if (!defined('CPT_DEBUG')) { define('CPT_DEBUG', false); }
 
 // Ensure core helper functions loaded (needed for early profile hook)
 require_once CORE_PRIVACY_TOGGLE_PATH . 'include/functions.inc.php';
@@ -123,4 +125,10 @@ function core_privacy_toggle_init()
 
   // prepare plugin configuration
   $conf['core_privacy_toggle'] = safe_unserialize($conf['core_privacy_toggle']);
+
+  // One-shot permission visibility cache bust flag: if set, invalidate then remove
+  if (!empty($_SESSION['cpt_permissions_changed'])) {
+    if (function_exists('invalidate_user_cache')) { invalidate_user_cache(); }
+    unset($_SESSION['cpt_permissions_changed']);
+  }
 }

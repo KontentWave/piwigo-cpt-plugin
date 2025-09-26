@@ -16,14 +16,8 @@ function cpt_setup_ucp_tabs(): void
 	$user_id = (int)$user['id'];
 
 	// Process POST early within the profile lifecycle (now canonical location)
-	if (isset($_POST['cpt_album_marker'])) {
-		global $page; $page['infos'][] = '[CPT debug] profile POST marker detected (handler entry)';
-		if (!empty($_POST['cpt_album']) && is_array($_POST['cpt_album'])) {
-			$updated = cpt_handle_album_form($_POST['cpt_album'], $user_id);
-			if ($updated) { $page['infos'][] = '[CPT debug] updates applied.'; }
-		} else {
-			$page['infos'][] = '[CPT debug] marker present but empty or invalid cpt_album payload';
-		}
+	if (isset($_POST['cpt_album_marker']) && !empty($_POST['cpt_album']) && is_array($_POST['cpt_album'])) {
+		cpt_handle_album_form($_POST['cpt_album'], $user_id);
 	}
 
 
@@ -188,15 +182,13 @@ function cpt_inject_album_manager_assets(string $html_partial): void
 function cpt_handle_album_form(array $payload, int $user_id): bool
 {
     $updated_any = false;
-    $debug_admin = true; // temporarily always on
-    global $page; $page['infos'][] = '[CPT debug] POST received for CPT (keys='.implode(',', array_map('intval', array_keys($payload))).')';
-    $page['infos'][] = '[CPT debug] Raw snippet: '.htmlspecialchars(substr(var_export($payload, true),0,400));
+	$debug_admin = CPT_DEBUG && pwg_get_session_var('is_admin');
     foreach ($payload as $raw_id => $fields) {
         if (!is_array($fields)) { continue; }
         $album_id = (int)$raw_id;
         if ($album_id <= 0) { continue; }
         $owns = cpt_album_is_owned_by($album_id, $user_id);
-        if ($debug_admin) { $page['infos'][] = '[CPT debug] album '.$album_id.' ownership check => '.($owns?'true':'false'); }
+	if ($debug_admin) { global $page; $page['infos'][] = '[CPT debug] album '.$album_id.' ownership check => '.($owns?'true':'false'); }
         if (!$owns) { continue; }
 
         $updates = [];
@@ -211,7 +203,7 @@ function cpt_handle_album_form(array $payload, int $user_id): bool
         $updates['status'] = array_key_exists('private', $fields) ? 'private' : 'public';
 
         if (!empty($updates)) {
-            if ($debug_admin) { $page['infos'][] = '[CPT debug] updating album '.$album_id.' fields: '.implode(',', array_keys($updates)); }
+			if ($debug_admin) { global $page; $page['infos'][] = '[CPT debug] updating album '.$album_id.' fields: '.implode(',', array_keys($updates)); }
             cpt_update_album($album_id, $updates, $debug_admin);
             $updated_any = true;
         }
@@ -266,6 +258,8 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false): void
 
 		// Synchronize permissions for private/public transitions
 		if (isset($fields['status']) && $old_status !== $fields['status']) {
+			// One-shot flag for other sessions to re-evaluate permissions on next request
+			$_SESSION['cpt_permissions_changed'] = 1;
 			$new_status = $fields['status'];
 			if ($new_status === 'private') {
 				// Remove any existing explicit permissions first to avoid duplication
@@ -294,6 +288,9 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false): void
 				pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int)$album_id);
 				if ($debug) { global $page; $page['infos'][] = '[CPT debug] Cleared user_access rows for now-public album '.$album_id; }
 			}
+			if (function_exists('trigger_notify')) { trigger_notify('CPT_after_privacy_change', $album_id); }
+			// Purge cached per-user access rows so permission recalculation occurs
+			cpt_purge_user_cache();
 		}
 	}
 }
@@ -313,5 +310,22 @@ function cpt_has_album_ownership_column(): bool
 		}
 	}
 	return $cache;
+}
+
+/**
+ * Purge the user cache table to force permission recalculation.
+ * This table stores precomputed accessible/forbidden categories per user.
+ * We delete rows (instead of TRUNCATE for portability) whenever an album privacy
+ * state changes so non-owner sessions immediately reflect new visibility.
+ */
+function cpt_purge_user_cache(): void
+{
+	global $prefixeTable;
+	if (empty($prefixeTable)) { return; }
+	$table = $prefixeTable.'user_cache';
+	// Verify table exists (avoid warnings on installs lacking it)
+	$check = pwg_query("SHOW TABLES LIKE '".pwg_db_real_escape_string($table)."'");
+	if (!$check || !pwg_db_fetch_row($check)) { return; }
+			pwg_query('DELETE FROM '.$table);
 }
 
