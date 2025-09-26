@@ -1,0 +1,27 @@
+name: Core Privacy Toggle PHPUnit
+
+on:
+  push:
+    paths:
+      - "albums/plugins/core_privacy_toggle/**"
+      - "!albums/plugins/core_privacy_toggle/README.md"
+  pull_request:
+    paths:
+      - "albums/plugins/core_privacy_toggle/**"
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          coverage: none
+          tools: composer
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+      - name: Run plugin PHPUnit tests
+        run: vendor/bin/phpunit -c albums/plugins/core_privacy_toggle/phpunit.xml.dist --testdox

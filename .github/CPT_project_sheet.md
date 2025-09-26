@@ -54,13 +54,28 @@ Simplified section requires standard form semantics only:
 
 ### Testing Plan (Adjusted)
 
-**PHPUnit**
+**PHPUnit (Implemented)**
 
-1. Retrieval (direct ownership) returns only expected albums when `user_id` column present.
-2. Retrieval (fallback) returns only exclusive contributor albums when column absent.
-3. Unauthorized update attempt rejected (no side effects) for both ownership modes.
-4. Data update persists name & comment (UTF-8 + length edge cases).
-5. Privacy toggle transitions (public ↔ private) correctly update status.
+An isolated in-memory harness simulates required Piwigo tables (`categories`, `images`, `image_category`, `user_access`, `user_cache`) so logic runs without a full Piwigo bootstrap. A minimal template stub and SQL pattern matcher (`pwg_query`) exercise only the query shapes the plugin emits.
+
+Covered by test classes in `core_privacy_toggle/tests/`:
+
+1. `AlbumRetrievalTest` – Direct ownership retrieval (user_id column present) and fallback exclusive-contributor retrieval when column absent.
+2. `AlbumUpdateSecurityTest` – Unauthorized update attempt ignored (no field mutations, returns false).
+3. `PrivacyToggleTest` – Private transition inserts explicit `user_access` rows (admin + owner), public transition removes them; now also asserts user cache purge flag each direction.
+4. `AlbumFieldPersistenceTest` – Name, comment, and status (`public`→`private`) update persists with UTF‑8 characters.
+5. `FallbackUpdateTest` – Updates permitted/denied via fallback heuristic (exclusive contributor vs. mixed contributors) when ownership column missing.
+6. `AlbumEdgeCasesTest` – Blank name ignored (original retained), whitespace-only comment stored as empty string, long multi-byte description persists.
+
+Additional behaviors explicitly / implicitly exercised:
+
+- Cache purge path (`cpt_purge_user_cache`) asserted through a test harness flag.
+- One-shot session flag side-effect (not directly asserted; low risk, minimal logic).
+
+Deferred / Not Unit-Tested Yet (future candidates):
+
+- Injection/integration path via `cpt_setup_ucp_tabs` (would require fuller template + POST environment simulation for end-to-end assurance – left to Cypress/E2E scope).
+- Mixed contributor edge cases where images added after initial exclusivity break fallback ownership (can be added if regression discovered).
 
 **Cypress / E2E**
 
@@ -89,3 +104,7 @@ Simplified section requires standard form semantics only:
 - Introduce a migration routine to add `user_id` to categories if absent (opt-in) for installations that want first-class ownership.
 - Add representative image selection via thumbnail chooser with lazy loading.
 - Provide REST/WebService endpoints mirroring the profile functionality for SPA or mobile clients.
+
+### Continuous Integration
+
+GitHub Actions workflow (`.github/workflows/phpunit.yml` under the plugin directory) runs the plugin PHPUnit suite on push & PR affecting plugin files. Matrix kept minimal (PHP 8.2) because logic is version-agnostic; can be extended later for 8.1/8.3 if needed.

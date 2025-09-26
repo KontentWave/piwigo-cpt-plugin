@@ -301,6 +301,10 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false): void
 function cpt_has_album_ownership_column(): bool
 {
 	static $cache = null;
+	// Test harness override (non-production). If set, bypass detection cost & static cache.
+	if (isset($GLOBALS['__cpt_force_ownership_column'])) {
+		return (bool)$GLOBALS['__cpt_force_ownership_column'];
+	}
 	if ($cache !== null) { return $cache; }
 	$cache = false;
 	$res = pwg_query('DESC '.CATEGORIES_TABLE);
