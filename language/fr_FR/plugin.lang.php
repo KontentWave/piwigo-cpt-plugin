@@ -22,5 +22,6 @@ $lang['CPT: Ownership column not detected; UCP album tab disabled.'] = 'Colonne 
 $lang['My Galleries'] = 'Mes galeries';
 $lang['CPT: Ownership column not detected; falling back to albums exclusively containing user photos.'] = 'Colonne propriétaire non détectée ; repli sur les galeries contenant exclusivement vos photos.';
 $lang['CPT: Limited mode enabled — only albums exclusively containing your photos are listed.'] = 'Mode limité : seules les galeries contenant exclusivement vos photos sont listées.';
+$lang['You have no editable galleries yet.'] = 'Vous n\'avez pas encore de galeries modifiables.';
 
 ?>

@@ -2,7 +2,7 @@
 
 This document is the living technical specification for the "Core Privacy Toggle" plugin. It will be updated as development progresses.
 
-### Phase 1 (MVP): UCP Album Management & Core Privacy Toggle (Updated Draft)
+### Phase 1 (MVP): UCP Album Management & Core Privacy Toggle (Implemented ✅)
 
 #### `Action`
 
@@ -12,30 +12,39 @@ Empower non-admin gallery owners by integrating album management controls (name,
 
 Initial concept used an ARIA tabbed interface. During integration with varied themes (e.g. Bootstrap Darkroom) we simplified to a progressive enhancement that injects a single structured fieldset section ("My Galleries") into the existing profile form. This reduced fragility, avoided layout clashes, and preserved full functionality with JavaScript disabled (the section simply does not appear when no albums qualify).
 
-### `Task` (Current Implementation Plan)
+### `Status` (As of 2025-09-27)
 
-1. **Plugin Skeleton**: `core_privacy_toggle/` with `main.inc.php`, `include/`, `template/`, `language/`, `js/`.
-2. **Profile Hook**: `add_event_handler('loc_begin_profile', 'cpt_setup_ucp_tabs');` (legacy name retained for compatibility; function now injects a section not tabs).
-3. **Ownership Detection**:
-   - Preferred: `categories.user_id` (Community plugin supplied).
-   - Fallback (when column absent): treat albums as editable if all images within an album were uploaded by the current user ("exclusive contributor" heuristic).
-4. **Album Data Fetch**:
-   - Collect `id, name, comment, status` for qualifying albums.
-   - Skip enhancement if none found (baseline page untouched).
-5. **Template Partial**: `template/ucp_album_manager.tpl` renders only input controls (loop). No outer form wrapper. Escapes output.
-6. **Progressive Enhancement Injection**:
-   - PHP renders partial to string and exports via inline script (`window.CPT_ALBUM_HTML`).
-   - JS (`js/ucp_tabs.js`) on DOM ready locates the profile form with robust selectors and inserts a `<fieldset class="cpt-section">` containing the partial before the submit block (or appended at end).
-7. **Submission Handling**:
-   - On POST, iterate `$_POST['cpt_album']` entries, validate ownership (preferred or fallback), apply sanitized updates (name, comment, privacy status). Add info message upon success.
-8. **Privacy Toggle**:
-   - Checkbox -> `status=private`; absence -> `status=public`.
-   - (Representative image selection deferred to later phase.)
-9. **Internationalization**: All UI strings routed through translation files; legend key `My Galleries` exported separately.
-10. **Fallback Messaging**:
+Phase 1 functionality is fully implemented and manually & automatically validated. The representative image chooser was intentionally deferred and remains the first candidate for the next phase.
 
-- Admin hint if ownership column missing.
-- User-visible limited mode banner when only fallback albums are shown.
+### Implementation Summary
+
+Delivered components & behaviors:
+
+1. **Plugin Skeleton** with structured directories (`include/`, `template/`, `language/`, `js/`).
+2. **Profile Hook Integration** via `cpt_setup_ucp_tabs` (legacy name) attaching on `loc_begin_profile` to process POST then expose the enhancement.
+3. **Dual Ownership Model**:
+   - Primary: `categories.user_id` (Community plugin).
+   - Fallback: exclusive contributor heuristic (all images in album uploaded by current user) when ownership column absent.
+4. **Album Data Handling**: Secure fetch of `id, name, comment, status`; early escape if zero qualifying albums (no intrusive markup).
+5. **Template Partial** (`ucp_album_manager.tpl`): Now a Bootstrap card layout with per‑album sub‑cards; fully escaped output; empty state message when no albums yet.
+6. **Progressive Enhancement Injection**: Server renders partial string → exported through inline JS → client script injects inside existing profile `<form>` (no nested forms) with accessibility preserved (`aria-label`).
+7. **Submission & Validation**: Unified POST handler validates ownership per album, applies sanitized updates, and aggregates a success info message.
+8. **Privacy Toggle & Permission Sync**: Switching to private inserts explicit `user_access` rows (admin + owner); switching to public removes them. Permission changes trigger user cache purge for immediate visibility updates across sessions.
+9. **Cache Invalidation**: Purges `user_cache` table entries after privacy transition; session flag supports subsequent permission recalculation.
+10. **Internationalization**: All visible strings localized (EN + FR) including empty state and limited-mode banner.
+11. **Fallback Messaging**: Admin diagnostic hint for missing ownership column; user-facing limited mode banner when operating via fallback heuristic only.
+12. **Security**: Ownership re‑checked server-side for every album before write; only whitelisted columns updated; status constrained to `public|private`.
+13. **Accessibility**: Semantic form controls, proper labels, grouped cards; removal of duplicate legends while retaining screen-reader context via `aria-label`.
+14. **Styling**: Modern card-based UI consistent with existing profile sections; minimal, scoped CSS additions; JS cache-busting via filemtime query param.
+15. **Testing**: Comprehensive PHPUnit suite (logic + security + edge cases + privacy transitions + fallback) and Cypress smoke test (login + environment resilience). Gherkin feature file drafted for richer future E2E expansion.
+16. **CI**: GitHub Actions workflows for PHPUnit and Cypress integrated.
+
+### Remaining (Deferred) Items
+
+- Representative image selection UI & persistence.
+- Rich E2E scenarios from `ucp_album_management.feature` (currently only smoke executed).
+- Multi-browser CI matrix and code coverage reporting.
+- Optional migration path to populate or enforce `categories.user_id` on legacy installs.
 
 ### Accessibility
 

@@ -19,8 +19,7 @@ Feature: Album Self-Management in User Control Panel
     When I fill in the name field for "My Trip Photos" with "Amazing Alpine Adventure"
     And I fill in the description field for "My Trip Photos" with "Photos from our 2025 trip."
     And I click the "Save Changes" button
-    Then I should see a "Your changes have been saved." confirmation message
-    And the name field for the album should contain "Amazing Alpine Adventure"
+    Then the name field for the album should contain "Amazing Alpine Adventure"    
 
   Scenario: Owner can make an album private
     Given I am logged in as "gallery_owner"

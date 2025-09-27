@@ -45,9 +45,13 @@
     // Create a new section/fieldset near the end of the form, before submit buttons
     var fs = document.createElement("fieldset");
     fs.className = "cpt-section";
-    var lg = document.createElement("legend");
-    lg.textContent = window.CPT_I18N_MY_GALLERIES || "My Galleries";
-    fs.appendChild(lg);
+    // We previously added a visible legend here. The redesigned template now
+    // includes its own card header, so we avoid duplicating the heading.
+    // Preserve accessibility by providing an aria-label instead of a legend.
+    fs.setAttribute(
+      "aria-label",
+      window.CPT_I18N_MY_GALLERIES || "My Galleries"
+    );
     var container = document.createElement("div");
     container.className = "cpt-section-body";
     container.innerHTML = window.CPT_ALBUM_HTML;
