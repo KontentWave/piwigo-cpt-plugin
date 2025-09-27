@@ -20,7 +20,6 @@ Once the MVP is established, the next logical step is to allow basic photo manag
 
 - **Feature: Set Album Representative:** Allow the owner to choose the album's cover image (thumbnail) from the photos within it.
 - **Feature: Edit Photo Properties:** Allow owners to edit the title and description of individual photos in their albums.
-- **Feature: Delete Photos:** Allow owners to delete photos from their own albums.
 - **Feature: Photo Sorting:** Allow owners to change the order of photos within their albums.
 
 ### Phase 3: Advanced Features (Brainstorming)
