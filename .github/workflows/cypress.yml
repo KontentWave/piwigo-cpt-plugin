@@ -1,0 +1,60 @@
+name: Core Privacy Toggle Cypress
+
+on:
+  push:
+    paths:
+      - "albums/plugins/core_privacy_toggle/**"
+      - "_qa/cypress/**"
+  pull_request:
+    paths:
+      - "albums/plugins/core_privacy_toggle/**"
+      - "_qa/cypress/**"
+
+jobs:
+  e2e:
+    name: E2E Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CYPRESS_adminUser: ${{ secrets.CYPRESS_ADMIN_USER }}
+      CYPRESS_adminPass: ${{ secrets.CYPRESS_ADMIN_PASS }}
+      # Allow overriding base URL via repo/environment secret; fallback to default.
+      CYPRESS_baseUrl: ${{ secrets.CYPRESS_BASE_URL || 'https://piwigo.local/albums' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "_qa/cypress/package-lock.json"
+
+      - name: Install Cypress deps
+        working-directory: _qa/cypress
+        run: npm ci || npm install
+
+      - name: Verify Cypress cache
+        working-directory: _qa/cypress
+        run: npx cypress verify
+
+      - name: Run smoke tests
+        working-directory: _qa/cypress
+        run: npx cypress run --spec cypress/e2e/smoke.cy.ts
+
+      - name: Store videos (if any)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-videos
+          path: _qa/cypress/cypress/videos
+          if-no-files-found: ignore
+
+      - name: Store screenshots (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-screenshots
+          path: _qa/cypress/cypress/screenshots
+          if-no-files-found: ignore
