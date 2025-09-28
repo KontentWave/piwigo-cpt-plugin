@@ -268,18 +268,3 @@ The Core Privacy Toggle plugin demonstrates **exceptional production readiness**
 The plugin is ready for immediate production deployment with standard monitoring and backup procedures. No blocking issues identified during audit.
 
 ---
-
-## Phase 2 Outlook (Draft)
-
-Planned/high-priority enhancements:
-
-1. **Representative Image Selector** – Accessible thumbnail chooser (lazy-loaded), persisting selection with existing ownership checks.
-2. **Expanded E2E Coverage** – Automate all scenarios in `ucp_album_management.feature` (privacy visibility cross-user, limited-mode banner, empty state) plus negative tests.
-3. **Coverage Reporting** – Add PHPUnit clover + HTML reports and minimum threshold gate in CI; optional Codecov/GitHub badge.
-4. **Multi-Browser Matrix** – Extend Cypress CI to Firefox (and possibly WebKit via Playwright if desired) to improve cross-engine confidence.
-5. **Performance Safeguards** – Optional pagination or accordion collapse when album count exceeds a configurable threshold; micro-timing log around fallback heuristic queries.
-6. **Accessibility Enhancements** – Add `aria-labelledby` linking each album card body to its header; announce save success via polite live region.
-7. **Ownership Migration Tool** – Utility to populate `categories.user_id` retroactively using earliest contributor (admin opt-in).
-8. **WebService Endpoints** – Expose list/update operations for future mobile or SPA clients (mirroring profile operations securely).
-
-Non-goals unless requested: bulk multi-album batch editing UI, advanced search/filtering, role delegation.

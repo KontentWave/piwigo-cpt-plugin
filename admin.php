@@ -8,26 +8,12 @@ defined('CORE_PRIVACY_TOGGLE_PATH') or die('Hacking attempt!');
 
 global $template, $page, $conf;
 
+// Phase 1 cleanup: remove legacy Welcome tab and always show configuration placeholder.
+// We keep structure minimal; future phases can reintroduce tabs if needed.
+$page['tab'] = 'config';
 
-// get current tab
-$page['tab'] = isset($_GET['tab']) ? $_GET['tab'] : $page['tab'] = 'home';
-
-// plugin tabsheet is not present on photo page
-if ($page['tab'] != 'photo')
-{
-  // tabsheet
-  include_once(PHPWG_ROOT_PATH.'admin/include/tabsheet.class.php');
-  $tabsheet = new tabsheet();
-  $tabsheet->set_id('core_privacy_toggle');
-
-  $tabsheet->add('home', l10n('Welcome'), CORE_PRIVACY_TOGGLE_ADMIN . '-home');
-  $tabsheet->add('config', l10n('Configuration'), CORE_PRIVACY_TOGGLE_ADMIN . '-config');
-  $tabsheet->select($page['tab']);
-  $tabsheet->assign();
-}
-
-// include page
-include(CORE_PRIVACY_TOGGLE_PATH . 'admin/' . $page['tab'] . '.php');
+// directly include the config page (no tabsheet)
+include(CORE_PRIVACY_TOGGLE_PATH . 'admin/config.php');
 
 // template vars
 $template->assign(array(
