@@ -100,6 +100,32 @@ Add a new locale: copy `language/en_UK/plugin.lang.php` → `language/<locale>/p
 
 ---
 
+## 🎨 Theme Compatibility (Current Status)
+
+This Phase 1 implementation was visually tuned against the **Bootstrap Darkroom** theme. Other themes behave as follows:
+
+| Theme              | Status / Observed Behavior | Notes                                                                                        |
+| ------------------ | -------------------------- | -------------------------------------------------------------------------------------------- |
+| Bootstrap Darkroom | Optimized                  | Baseline spacing, card borders, and typography aligned.                                      |
+| Modus              | Minor style drift          | Card padding & heading weight differ; needs small CSS overrides.                             |
+| Elegance           | Minor style drift          | Similar to Modus; neutral styling but lacks card shadow consistency.                         |
+| Smart Pocket       | Not currently styled       | Section does not appear with intended card styling (mobile theme loads different CSS stack). |
+
+Planned adjustments (Phase 2 or community PRs welcome):
+
+1. Add per-theme lightweight override file (auto-selected via theme id) to normalize spacing & typography.
+2. Provide a no-frills fallback style block when advanced theme classes are absent.
+3. Detect mobile/simplified themes (e.g. Smart Pocket) and switch to a single-column, borderless list layout.
+
+Temporary Workarounds:
+
+- Admins can drop a custom CSS file in `local/css/` targeting `.cpt-album-card` (or the container class you use) to adjust padding / fonts.
+- To disable enhancement styling entirely, comment out the plugin stylesheet enqueue line in `template/style.css` (functionality unaffected).
+
+If you test additional themes, please open an issue with a screenshot + theme name to expand this matrix.
+
+---
+
 ## ▶ Usage Flow
 
 1. User opens Profile page.
