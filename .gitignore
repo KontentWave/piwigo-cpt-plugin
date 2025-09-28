@@ -1,5 +1,2 @@
 /vendor/
 /tests/_output/
-/tools/
-
-composer.lock
