@@ -1,1 +1,0 @@
-{* Deprecated: This admin home template is not used in Core Privacy Toggle Phase 1 *}
