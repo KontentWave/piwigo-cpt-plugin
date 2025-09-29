@@ -1,9 +1,1 @@
-{strip}
-{combine_css id="core_privacy_toggle" path=$CORE_PRIVACY_TOGGLE_PATH|cat:"template/style.css"}
-
-{* <!-- nothing more than the button itself must be defined here --> *}
-<a href="javascript:alert('Hello world!');" title="{'This is not the %s you are looking for'|translate:('button'|translate)}" class="pwg-state-default pwg-button" rel="nofollow">
-  <span class="pwg-icon core_privacy_toggle-button"> </span>
-  <span class="pwg-button-text">{'Core Privacy Toggle'|translate}</span>
-</a>
-{/strip}
+{* Deprecated: This skeleton demo button template is not used in Core Privacy Toggle Phase 1 *}

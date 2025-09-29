@@ -1,7 +1,10 @@
-.square-list {
-  list-style:square !important;
-  margin-left:35px !important;
+/* Core Privacy Toggle - Admin interface styles (minimal) */
+
+.cpt-admin ul {
+  list-style: disc;
+  margin-left: 2rem;
 }
-  .square-list li {
-    margin-bottom:0 !important;
-  }
+
+.cpt-admin ul li {
+  margin-bottom: 0.5rem;
+}
