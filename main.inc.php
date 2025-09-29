@@ -35,10 +35,7 @@ global $prefixeTable;
 
 define('CORE_PRIVACY_TOGGLE_ID',      basename(dirname(__FILE__)));
 define('CORE_PRIVACY_TOGGLE_PATH' ,   PHPWG_PLUGINS_PATH . CORE_PRIVACY_TOGGLE_ID . '/');
-define('CORE_PRIVACY_TOGGLE_TABLE',   $prefixeTable . 'core_privacy_toggle');
 define('CORE_PRIVACY_TOGGLE_ADMIN',   get_root_url() . 'admin.php?page=plugin-' . CORE_PRIVACY_TOGGLE_ID);
-define('CORE_PRIVACY_TOGGLE_PUBLIC',  get_absolute_root_url() . make_index_url(array('section' => 'core_privacy_toggle')) . '/');
-define('CORE_PRIVACY_TOGGLE_DIR',     PHPWG_ROOT_PATH . PWG_LOCAL_DIR . 'core_privacy_toggle/');
 // Debug flag (set to true only during development)
 if (!defined('CPT_DEBUG')) { define('CPT_DEBUG', false); }
 
@@ -62,52 +59,9 @@ add_event_handler('loc_begin_profile', 'cpt_setup_ucp_tabs');
  */
 if (defined('IN_ADMIN'))
 {
-  // file containing all admin handlers functions
-  $admin_file = CORE_PRIVACY_TOGGLE_PATH . 'include/admin_events.inc.php';
-
-  // admin plugins menu link
-  add_event_handler('get_admin_plugin_menu_links', 'core_privacy_toggle_admin_plugin_menu_links',
-    EVENT_HANDLER_PRIORITY_NEUTRAL, $admin_file);
-
-  // new tab on photo page
-  add_event_handler('tabsheet_before_select', 'core_privacy_toggle_tabsheet_before_select',
-    EVENT_HANDLER_PRIORITY_NEUTRAL, $admin_file);
-
-  // new prefiler in Batch Manager
-  add_event_handler('get_batch_manager_prefilters', 'core_privacy_toggle_add_batch_manager_prefilters',
-    EVENT_HANDLER_PRIORITY_NEUTRAL, $admin_file);
-  add_event_handler('perform_batch_manager_prefilters', 'core_privacy_toggle_perform_batch_manager_prefilters',
-    EVENT_HANDLER_PRIORITY_NEUTRAL, $admin_file);
-
-  // new action in Batch Manager
-  add_event_handler('loc_end_element_set_global', 'core_privacy_toggle_loc_end_element_set_global',
-    EVENT_HANDLER_PRIORITY_NEUTRAL, $admin_file);
-  add_event_handler('element_set_global_action', 'core_privacy_toggle_element_set_global_action',
-    EVENT_HANDLER_PRIORITY_NEUTRAL, $admin_file);
+    // No admin demo hooks retained (privacy toggle UCP is front-end only for Phase 1).
 }
-// Public section/menu features from starter template are disabled for MVP to avoid extra nav entries.
-
-// file containing API function
-$ws_file = CORE_PRIVACY_TOGGLE_PATH . 'include/ws_functions.inc.php';
-
-// add API function
-add_event_handler('ws_add_methods', 'core_privacy_toggle_ws_add_methods',
-    EVENT_HANDLER_PRIORITY_NEUTRAL, $ws_file);
-
-
-/*
- * event functions can also be wrapped in a class
- */
-
-// file containing the class for menu handlers functions
-$menu_file = CORE_PRIVACY_TOGGLE_PATH . 'include/menu_events.class.php';
-
-// Menu block handlers disabled for MVP (avoid adding extra menu entries)
-// add_event_handler('blockmanager_apply', array('CorePrivacyToggleMenu', 'blockmanager_apply1'), EVENT_HANDLER_PRIORITY_NEUTRAL+10, $menu_file);
-// add_event_handler('blockmanager_register_blocks', array('CorePrivacyToggleMenu', 'blockmanager_register_blocks'), EVENT_HANDLER_PRIORITY_NEUTRAL, $menu_file);
-// add_event_handler('blockmanager_apply', array('CorePrivacyToggleMenu', 'blockmanager_apply2'), EVENT_HANDLER_PRIORITY_NEUTRAL, $menu_file);
-
-// NOTE: blockmanager_apply1() and blockmanager_apply2() can (must) be merged
+  // Removed: public page, menu blocks, demo webservice, batch manager examples.
 
 
 /**

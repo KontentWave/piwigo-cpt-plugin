@@ -7,11 +7,7 @@
  */
 
 $lang['Core Privacy Toggle'] = 'Core Privacy Toggle';
-$lang['What Core Privacy Toggle can do for me?'] = 'What Core Privacy Toggle can do for me?';
-$lang['Check me!'] = 'Check me!';
-$lang['Nothing appened, but you didn\'t check the box!'] = 'Nothing appened, but you didn\'t check the box!';
-$lang['Nothing appened, but you checked the box!'] = 'Nothing appened, but you checked the box!';
-$lang['Common configuration'] = 'Common configuration';
+// Removed legacy skeleton/demo translation keys.
 
 // CPT UCP album management additions
 $lang['Edit your galleries. Changes are saved with the main form.'] = 'Edit your galleries. Changes are saved with the main form.';
