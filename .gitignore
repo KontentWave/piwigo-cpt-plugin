@@ -7,3 +7,4 @@
 core_privacy_toggle.code-workspace
 phpunit.xml.dist
 pem_metadata.txt
+/.specstory/
