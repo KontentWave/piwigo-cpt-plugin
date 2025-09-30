@@ -3,3 +3,7 @@
 /tools/
 /.github/
 /.specstory/
+.phpunit.result.cache
+core_privacy_toggle.code-workspace
+phpunit.xml.dist
+pem_metadata.txt
