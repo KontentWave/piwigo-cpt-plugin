@@ -35,7 +35,7 @@ Delivered components & behaviors:
 11. **Fallback Messaging**: Admin diagnostic hint for missing ownership column; user-facing limited mode banner when operating via fallback heuristic only.
 12. **Security**: Ownership re‑checked server-side for every album before write; only whitelisted columns updated; status constrained to `public|private`.
 13. **Accessibility**: Semantic form controls, proper labels, grouped cards; removal of duplicate legends while retaining screen-reader context via `aria-label`.
-14. **Styling**: Modern card-based UI consistent with existing profile sections; minimal, scoped CSS additions; JS cache-busting via filemtime query param.
+14. **Styling**: Modern card-based UI consistent with existing profile sections; relies on host theme styles (no plugin stylesheet); JS cache-busting via filemtime query param.
 15. **Testing**: Comprehensive PHPUnit suite (logic + security + edge cases + privacy transitions + fallback) and Cypress smoke test (login + environment resilience). Gherkin feature file drafted for richer future E2E expansion.
 16. **CI**: GitHub Actions workflows for PHPUnit and Cypress integrated.
 

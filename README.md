@@ -39,7 +39,7 @@ Fallback is intentionally conservative to prevent accidental elevation of contro
 | Smarty Template (`template/ucp_album_manager.tpl`) | Renders inner album inputs (card layout). No form tag or business logic.                             |
 | JavaScript (`js/ucp_tabs.js`)                      | Locates the profile form and injects the rendered partial. Adds hidden marker + accessibility label. |
 | Language Files (`language/*/plugin.lang.php`)      | I18n keys for all UI strings.                                                                        |
-| Styles (`template/style.css`)                      | Light, scoped adjustments to match theme cards.                                                      |
+| Styling (theme-driven)                             | Relies on the active theme; no plugin-specific stylesheet is bundled.                                |
 | Tests (`tests/`)                                   | In‑memory DB simulation for deterministic logic tests.                                               |
 
 The server always performs validation; the browser never “decides” ownership.
@@ -95,7 +95,7 @@ Add a new locale: copy `language/en_UK/plugin.lang.php` → `language/<locale>/p
 1. Install and activate the **Community** plugin (recommended).
 2. Copy this directory to `piwigo/plugins/core_privacy_toggle/` or install via Piwigo’s plugin manager if published.
 3. Activate Core Privacy Toggle in the Piwigo admin panel.
-4. (Optional) Clear compiled templates/cache for immediate JS/style pickup.
+4. (Optional) Clear compiled templates/cache for immediate markup/JS pickup.
 5. Visit a user’s Profile page (`profile.php`) to confirm the “My Galleries” card is present when the user owns qualifying albums.
 
 ---
@@ -119,8 +119,7 @@ Planned adjustments (Phase 2 or community PRs welcome):
 
 Temporary Workarounds:
 
-- Admins can drop a custom CSS file in `local/css/` targeting `.cpt-album-card` (or the container class you use) to adjust padding / fonts.
-- To disable enhancement styling entirely, comment out the plugin stylesheet enqueue line in `template/style.css` (functionality unaffected).
+- Admins can drop a custom CSS file in `local/css/` targeting `.cpt-album` (or the wrapping `.cpt-album-manager` container) to adjust spacing or typography.
 
 If you test additional themes, please open an issue with a screenshot + theme name to expand this matrix.
 
