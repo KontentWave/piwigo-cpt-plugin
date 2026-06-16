@@ -8,23 +8,23 @@ Empower non‑admin gallery users to manage their own albums (name, description,
 
 ## 📌 Key Features
 
-| Capability                   | Description                                                                                                 |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Inline Album Editing         | Edit album name & description directly on the Profile page (no navigation to admin).                        |
-| Privacy Toggle               | One‑click switch between Public and Private per owned album.                                                |
-| Permission Sync              | Private → creates explicit `user_access` rows (admin + owner). Public → cleans them up.                     |
-| Dual Ownership Model         | Prefers `categories.user_id` (Community plugin). Falls back to “exclusive contributor” heuristic if absent. |
-| Immediate Visibility Updates | Purges `user_cache` so privacy changes take effect for other users right away.                              |
-| Progressive Enhancement      | Works without JavaScript (JS just improves layout).                                                         |
-| Internationalization         | English & French translations shipped; easily extendable.                                                   |
-| Accessibility                | Native form controls, labelled groups, no keyboard traps.                                                   |
-| Test Coverage                | PHPUnit logic tests + Cypress smoke test in CI.                                                             |
+| Capability                   | Description                                                                                                                                                                            |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Inline Album Editing         | Edit album name & description directly on the Profile page (no navigation to admin).                                                                                                   |
+| Privacy Toggle               | One‑click switch between Public and Private per owned album.                                                                                                                           |
+| Permission Sync              | Private → creates explicit `user_access` rows (admin + owner). Public → cleans them up.                                                                                                |
+| Dual Ownership Model         | Prefers `categories.community_user` (current Community plugin), supports legacy `categories.user_id`, and falls back to an “exclusive contributor” heuristic if neither column exists. |
+| Immediate Visibility Updates | Purges `user_cache` so privacy changes take effect for other users right away.                                                                                                         |
+| Progressive Enhancement      | Works without JavaScript (JS just improves layout).                                                                                                                                    |
+| Internationalization         | English & French translations shipped; easily extendable.                                                                                                                              |
+| Accessibility                | Native form controls, labelled groups, no keyboard traps.                                                                                                                              |
+| Test Coverage                | PHPUnit logic tests + Cypress smoke test in CI.                                                                                                                                        |
 
 ---
 
 ## ⚠️ Prerequisite: Community Plugin
 
-For first‑class ownership detection this plugin expects the **Community** plugin to be installed and active, because it adds the `user_id` column to the `categories` table.  
+For first‑class ownership detection this plugin expects the **Community** plugin to be installed and active, because current Community versions add the `community_user` column to the `categories` table. Legacy Community installs may still use `user_id`.  
 If Community is missing, Core Privacy Toggle gracefully enters **Limited (Fallback) Mode**: it will only list albums where every photo inside was uploaded by the current user.
 
 Fallback is intentionally conservative to prevent accidental elevation of control over shared albums.
@@ -48,7 +48,7 @@ The server always performs validation; the browser never “decides” ownership
 
 ## 🔐 Ownership & Security Model
 
-1. Attempt direct ownership using `categories.user_id` (Community).
+1. Attempt direct ownership using `categories.community_user` when present, or legacy `categories.user_id` when running against older Community installs.
 2. If absent, compute exclusive‑contributor albums: albums where `COUNT(DISTINCT added_by) == 1` and that `added_by` equals the logged user.
 3. Each submitted album ID is re‑checked before any write.
 4. Only `name`, `comment`, and `status` can be changed; unexpected fields are ignored.
@@ -159,7 +159,7 @@ This prevents users from editing collaborative albums when direct ownership meta
 2. Automate all scenarios in feature file (privacy visibility cross-user, limited banner, empty state).
 3. Coverage reporting & badge (clover + threshold gate).
 4. Multi‑browser E2E (Firefox; optional WebKit/Playwright).
-5. Ownership migration helper to populate `categories.user_id`.
+5. Ownership migration helper to normalize Community ownership metadata when needed.
 6. WebService endpoints (`cpt.album.list` / `cpt.album.update`).
 7. Pagination or collapse behavior for very large album counts.
 
@@ -177,7 +177,7 @@ This prevents users from editing collaborative albums when direct ownership meta
 ## ❓ FAQ
 
 **Q: Why don’t I see any albums?**  
-Either you don’t own any (per Community’s `user_id`) or, in fallback mode, there are no albums where all images were uploaded by you.
+Either you don’t own any per Community ownership metadata (`community_user` on current installs, `user_id` on older ones) or, in fallback mode, there are no albums where all images were uploaded by you.
 
 **Q: Can I bulk-toggle multiple albums?**  
 Not in Phase 1—submit once for all changed rows though (batch via single form post). Bulk UI may arrive in a later phase.

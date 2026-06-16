@@ -3,7 +3,8 @@
   <div class="card mb-3">
     <h4 class="card-header">{'My Galleries'|@translate}</h4>
     <div class="card-body">
-      <p id="cpt-album-manager-help" class="cpt-help text-muted small mb-4">{'Edit your galleries. Changes are saved with the main form.'|@translate}</p>
+      <p id="cpt-album-manager-help" class="cpt-help text-muted small mb-3">{'Edit your galleries and save them here.'|@translate}</p>
+      <div class="cpt-status alert" role="status" aria-live="polite" hidden></div>
 
       {if isset($UCP_ALBUMS) && $UCP_ALBUMS|@count > 0}
         {foreach from=$UCP_ALBUMS item=ALBUM}
@@ -35,9 +36,15 @@
             </div>
           </div>
         {/foreach}
+
+        <div class="text-right mt-3">
+          <button type="button" class="btn btn-primary cpt-save-button">{'Save Changes'|@translate}</button>
+        </div>
       {else}
         <p class="text-muted mb-0">{'You have no editable galleries yet.'|@translate}</p>
       {/if}
+
+      <input type="hidden" name="cpt_album_marker" value="1" />
     </div>
   </div>
 </div>

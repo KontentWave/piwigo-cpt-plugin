@@ -10,10 +10,24 @@ $lang['Core Privacy Toggle'] = 'Core Privacy Toggle';
 // Removed legacy skeleton/demo translation keys.
 
 // CPT UCP album management additions
-$lang['Edit your galleries. Changes are saved with the main form.'] = 'Edit your galleries. Changes are saved with the main form.';
+$lang['Edit your galleries and save them here.'] = 'Edit your galleries and save them here.';
 $lang['Album'] = 'Album';
 $lang['Make this gallery private'] = 'Make this gallery private';
 $lang['My Galleries'] = 'My Galleries';
+$lang['Save Changes'] = 'Save Changes';
+$lang['Your changes have been saved.'] = 'Your changes have been saved.';
+$lang['An error has occurred.'] = 'An error has occurred.';
+$lang['Album privacy'] = 'Album privacy';
+$lang['This album is currently private.'] = 'This album is currently private.';
+$lang['This album is currently public.'] = 'This album is currently public.';
+$lang['Change the album to private'] = 'Change the album to private';
+$lang['Change the album to public'] = 'Change the album to public';
+$lang['Album privacy updated.'] = 'Album privacy updated.';
+$lang['Status'] = 'Status';
+$lang['How it works'] = 'How it works';
+$lang['Users can manage their albums from their profile page'] = 'Users can manage their albums from their profile page';
+$lang['Album name, description and privacy can be edited'] = 'Album name, description and privacy can be edited';
+$lang['Works with Community plugin ownership or fallback detection'] = 'Works with Community plugin ownership or fallback detection';
 $lang['CPT: Ownership column not detected; falling back to albums exclusively containing user photos.'] = 'Ownership column not detected; falling back to albums that exclusively contain your photos.';
 $lang['CPT: Limited mode enabled — only albums exclusively containing your photos are listed.'] = 'Limited mode: only albums exclusively containing your photos are listed.';
 $lang['You have no editable galleries yet.'] = 'You have no editable galleries yet.';

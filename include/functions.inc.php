@@ -17,7 +17,10 @@ function cpt_setup_ucp_tabs(): void
 
 	// Process POST early within the profile lifecycle (now canonical location)
 	if (isset($_POST['cpt_album_marker']) && !empty($_POST['cpt_album']) && is_array($_POST['cpt_album'])) {
-		cpt_handle_album_form($_POST['cpt_album'], $user_id);
+		if (cpt_handle_album_form($_POST['cpt_album'], $user_id)) {
+			global $page;
+			$page['infos'][] = l10n('Your changes have been saved.');
+		}
 	}
 
 
@@ -59,22 +62,203 @@ function cpt_setup_ucp_tabs(): void
 		// Use set_filename + parse instead of fetch (fetch not available in this env)
 		$template->set_filename('cpt_ucp_album_manager', realpath(CORE_PRIVACY_TOGGLE_PATH.'template/ucp_album_manager.tpl'));
 		$partial = $template->parse('cpt_ucp_album_manager', true);
-		// Add hidden marker server-side (non-JS fallback) so submission still detectable
-		$partial_with_marker = $partial . '<input type="hidden" name="cpt_album_marker" value="1" />';
-		cpt_inject_album_manager_assets($partial_with_marker);
+		cpt_attach_album_manager_to_profile();
+		cpt_inject_album_manager_assets($partial);
 }
 
 /**
- * Count albums owned by user. Ownership relies on Community plugin adding user_id to categories.
+ * Process the album-page quick toggle form before index.php renders.
+ */
+function cpt_handle_album_page_toggle(): void
+{
+	global $page, $user;
+
+	if (empty($user['id']) || empty($_POST['cpt_album_quick_toggle'])) {
+		return;
+	}
+
+	$category = cpt_get_current_album_page_category();
+	if ($category === null) {
+		return;
+	}
+
+	if (get_pwg_token() !== (string) ($_POST['pwg_token'] ?? '')) {
+		$page['errors'][] = l10n('Invalid security token');
+		return;
+	}
+
+	$album_id = (int) $category['id'];
+	$user_id = (int) $user['id'];
+	if (!cpt_album_is_owned_by($album_id, $user_id)) {
+		return;
+	}
+
+	$target_status = (string) ($_POST['cpt_album_status'] ?? '');
+	if (!in_array($target_status, array('public', 'private'), true)) {
+		return;
+	}
+
+	$current_status = cpt_get_album_status($album_id) ?? (string) ($category['status'] ?? 'public');
+	if ($current_status !== $target_status) {
+		cpt_update_album($album_id, array('status' => $target_status));
+		$_SESSION['page_infos'][] = l10n('Album privacy updated.');
+	}
+
+	redirect(duplicate_index_url());
+}
+
+/**
+ * Render a compact privacy toggle directly on owned album pages.
+ */
+function cpt_attach_album_page_toggle(): void
+{
+	global $page, $template, $user;
+
+	if (empty($user['id'])) {
+		return;
+	}
+
+	$category = cpt_get_current_album_page_category();
+	if ($category === null) {
+		return;
+	}
+
+	$album_id = (int) $category['id'];
+	$user_id = (int) $user['id'];
+	if (!cpt_album_is_owned_by($album_id, $user_id)) {
+		return;
+	}
+
+	$is_private = (string) ($category['status'] ?? 'public') === 'private';
+	$template->assign('CPT_ALBUM_TOGGLE_ACTION', duplicate_index_url());
+	$template->assign('CPT_ALBUM_IS_PRIVATE', $is_private);
+	$template->assign('CPT_ALBUM_TOGGLE_TARGET_STATUS', $is_private ? 'public' : 'private');
+	$template->assign(
+		'CPT_ALBUM_TOGGLE_STATUS_TEXT',
+		$is_private ? l10n('This album is currently private.') : l10n('This album is currently public.')
+	);
+	$template->assign('PWG_TOKEN', get_pwg_token());
+
+	$template->set_filename('cpt_album_page_toggle', realpath(CORE_PRIVACY_TOGGLE_PATH.'template/album_page_toggle.tpl'));
+	$html = $template->parse('cpt_album_page_toggle', true);
+	cpt_append_index_content_begin($html);
+	cpt_inject_album_page_toggle_assets($html);
+}
+
+/**
+ * Returns the current category context when the public page is a single album view.
+ */
+function cpt_get_current_album_page_category(): ?array
+{
+	global $page;
+
+	if (($page['section'] ?? null) !== 'categories') {
+		return null;
+	}
+
+	if (empty($page['category']) || !is_array($page['category']) || empty($page['category']['id'])) {
+		return null;
+	}
+
+	if (!empty($page['combined_categories'])) {
+		return null;
+	}
+
+	return $page['category'];
+}
+
+/**
+ * Append HTML to the standard public-page plugin slot when available.
+ */
+function cpt_append_index_content_begin(string $html): void
+{
+	global $template;
+
+	$existing = method_exists($template, 'get_template_vars')
+		? $template->get_template_vars('PLUGIN_INDEX_CONTENT_BEGIN')
+		: null;
+
+	$template->assign(
+		'PLUGIN_INDEX_CONTENT_BEGIN',
+		(is_string($existing) ? $existing : '').$html
+	);
+}
+
+/**
+ * Expose the album-page shortcut for themes that skip PLUGIN_INDEX_CONTENT_BEGIN.
+ */
+function cpt_inject_album_page_toggle_assets(string $html_partial): void
+{
+	$json = json_encode($html_partial, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT);
+	$inline = 'window.CPT_ALBUM_PAGE_HTML = '.$json.';window.CPT_ALBUM_PAGE_ASSETS_READY=1;';
+
+	$css_path = CORE_PRIVACY_TOGGLE_PATH.'template/album_page_toggle.css';
+	$css_ver = '';
+	if (file_exists($css_path)) { $css_ver = '?v='.filemtime($css_path); }
+	$path = CORE_PRIVACY_TOGGLE_PATH.'js/album_page_toggle.js';
+	$ver = '';
+	if (file_exists($path)) { $ver = '?v='.filemtime($path); }
+
+	global $template;
+	if (method_exists($template, 'append')) {
+		if (file_exists($css_path)) {
+			$template->append('head_elements', '<link rel="stylesheet" href="'.htmlspecialchars($css_path.$css_ver, ENT_QUOTES).'">');
+		}
+		$template->append('head_elements', '<script>'.$inline.'</script>');
+		if (file_exists($path)) {
+			$template->append('head_elements', '<script src="'.htmlspecialchars($path.$ver, ENT_QUOTES).'"></script>');
+		}
+		$template->append('footer_msgs', '<script>window.CPT_ALBUM_PAGE_ASSETS_READY||(function(){'.$inline.'})();</script>');
+		if (file_exists($path)) {
+			$template->append('footer_msgs', '<script src="'.htmlspecialchars($path.$ver, ENT_QUOTES).'"></script>');
+		}
+	}
+}
+
+/**
+ * Attach the album manager as a native Piwigo profile plugin block.
+ */
+function cpt_attach_album_manager_to_profile(): void
+{
+	global $template;
+	$template_path = realpath(CORE_PRIVACY_TOGGLE_PATH.'template/ucp_album_manager.tpl');
+	if ($template_path === false) {
+		return;
+	}
+
+	$existing_blocks = method_exists($template, 'get_template_vars') ? $template->get_template_vars('PLUGINS_PROFILE') : null;
+	if (is_array($existing_blocks)) {
+		foreach ($existing_blocks as $block) {
+			if (is_array($block) && ($block['template'] ?? null) === $template_path) {
+				return;
+			}
+		}
+	}
+
+	$block = array(
+		'name' => l10n('My Galleries'),
+		'desc' => '',
+		'standard_show_save' => false,
+		'template' => $template_path,
+	);
+
+	if (method_exists($template, 'append')) {
+		$template->append('PLUGINS_PROFILE', $block);
+		return;
+	}
+
+	$blocks = is_array($existing_blocks) ? $existing_blocks : array();
+	$blocks[] = $block;
+	$template->assign('PLUGINS_PROFILE', $blocks);
+}
+
+/**
+ * Count albums owned by user. Ownership prefers current Community plugin's
+ * community_user column, with legacy user_id support retained.
  */
 function cpt_count_albums_owned_by(int $user_id): int
 {
-	if (!cpt_has_album_ownership_column()) { return 0; }
-	$query = 'SELECT COUNT(id) AS cnt FROM '.CATEGORIES_TABLE.' WHERE user_id = '.(int)$user_id; // relies on Community plugin
-	$result = pwg_query($query);
-	if (!$result) { return 0; }
-	$row = pwg_db_fetch_assoc($result);
-	return (int)($row['cnt'] ?? 0);
+	return count(cpt_fetch_albums_owned_by($user_id));
 }
 
 /**
@@ -82,9 +266,11 @@ function cpt_count_albums_owned_by(int $user_id): int
  */
 function cpt_fetch_albums_owned_by(int $user_id): array
 {
-	if (!cpt_has_album_ownership_column()) { return []; }
+	$ownership_column = cpt_get_album_ownership_column();
+	if ($ownership_column === null) { return []; }
 	$albums = [];
-	$query = 'SELECT id, name, comment, status FROM '.CATEGORIES_TABLE.' WHERE user_id = '.(int)$user_id.' ORDER BY id DESC';
+	$album_ids = [];
+	$query = 'SELECT id, name, comment, status FROM '.CATEGORIES_TABLE.' WHERE '.$ownership_column.' = '.(int)$user_id.' ORDER BY id DESC';
 	$result = pwg_query($query);
 	if (!$result) { return $albums; }
 	while ($row = pwg_db_fetch_assoc($result)) {
@@ -94,7 +280,23 @@ function cpt_fetch_albums_owned_by(int $user_id): array
 			'comment' => $row['comment'],
 			'status' => $row['status'],
 		];
+		$album_ids[(int)$row['id']] = true;
 	}
+
+	foreach (cpt_fetch_albums_contributed_exclusive($user_id) as $album) {
+		$album_id = (int) $album['id'];
+		if (isset($album_ids[$album_id])) {
+			continue;
+		}
+
+		if (cpt_get_album_explicit_owner_id($album_id) !== null) {
+			continue;
+		}
+
+		$albums[] = $album;
+		$album_ids[$album_id] = true;
+	}
+
 	return $albums;
 }
 
@@ -154,7 +356,9 @@ function cpt_inject_album_manager_assets(string $html_partial): void
 	// Safely JSON encode for embedding (will be parsed by JS)
 	$json = json_encode($html_partial, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT);
 	$legend = json_encode(l10n('My Galleries'), JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT);
-	$inline = 'window.CPT_ALBUM_HTML = '.$json.';window.CPT_I18N_MY_GALLERIES='.$legend.';window.CPT_ASSETS_READY=1;';
+	$save_success = json_encode(l10n('Your changes have been saved.'), JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT);
+	$save_error = json_encode(l10n('An error has occurred.'), JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT);
+	$inline = 'window.CPT_ALBUM_HTML = '.$json.';window.CPT_I18N_MY_GALLERIES='.$legend.';window.CPT_I18N_SAVE_SUCCESS='.$save_success.';window.CPT_I18N_SAVE_ERROR='.$save_error.';window.CPT_ASSETS_READY=1;';
 
 	$path = CORE_PRIVACY_TOGGLE_PATH.'js/ucp_tabs.js';
 	$ver = '';
@@ -173,6 +377,50 @@ function cpt_inject_album_manager_assets(string $html_partial): void
 				$template->append('footer_msgs', '<script src="'.htmlspecialchars($path.$ver, ENT_QUOTES).'"></script>');
 			}
 		}
+}
+
+/**
+ * Register webservice methods used by theme-specific AJAX profile pages.
+ */
+function cpt_add_ws_methods($arr): void
+{
+	$service = &$arr[0];
+	$service->addMethod(
+		'core_privacy_toggle.albums.update',
+		'cpt_ws_update_albums',
+		array(
+			'payload' => array(),
+			'pwg_token' => array(),
+		),
+		'Update owned albums from AJAX-driven profile pages.'
+	);
+}
+
+/**
+ * AJAX endpoint for theme-driven profile pages that do not submit profile.php.
+ */
+function cpt_ws_update_albums($params, &$service)
+{
+	global $user;
+
+	if (get_pwg_token() !== $params['pwg_token']) {
+		return new \PwgError(403, 'Invalid security token');
+	}
+
+	if (empty($user['id']) || is_a_guest()) {
+		return new \PwgError(401, 'Access denied');
+	}
+
+	$payload = json_decode(stripslashes((string)($params['payload'] ?? '')), true);
+	if (!is_array($payload)) {
+		return new \PwgError(400, 'Invalid album payload');
+	}
+
+	if (!cpt_handle_album_form($payload, (int)$user['id'])) {
+		return new \PwgError(400, 'No album changes were applied');
+	}
+
+	return l10n('Your changes have been saved.');
 }
 
 /**
@@ -212,14 +460,22 @@ function cpt_handle_album_form(array $payload, int $user_id): bool
 }
 
 /**
- * Check album ownership using Community plugin's user_id field or fallback heuristic.
+ * Check album ownership using the detected ownership column or fallback heuristic.
  */
 function cpt_album_is_owned_by(int $album_id, int $user_id): bool
 {
-	if (cpt_has_album_ownership_column()) {
-		$query = 'SELECT 1 FROM '.CATEGORIES_TABLE.' WHERE id='.(int)$album_id.' AND user_id='.(int)$user_id.' LIMIT 1';
+	$ownership_column = cpt_get_album_ownership_column();
+	if ($ownership_column !== null) {
+		$query = 'SELECT 1 FROM '.CATEGORIES_TABLE.' WHERE id='.(int)$album_id.' AND '.$ownership_column.'='.(int)$user_id.' LIMIT 1';
 		$result = pwg_query($query);
-		return (bool)pwg_db_fetch_row($result);
+		if ((bool) pwg_db_fetch_row($result)) {
+			return true;
+		}
+
+		$explicit_owner_id = cpt_get_album_explicit_owner_id($album_id);
+		if ($explicit_owner_id !== null) {
+			return false;
+		}
 	}
 	$sql = 'SELECT COUNT(DISTINCT i.added_by) AS contribs, MIN(i.added_by) AS min_by
 		FROM '.IMAGE_CATEGORY_TABLE.' ic
@@ -230,6 +486,29 @@ function cpt_album_is_owned_by(int $album_id, int $user_id): bool
 	$row = pwg_db_fetch_assoc($res);
 	if (!$row) { return false; }
 	return ((int)($row['contribs'] ?? 0) === 1 && (int)($row['min_by'] ?? -1) === (int)$user_id);
+}
+
+/**
+ * Returns the explicit owner id when the ownership column exists and is set.
+ */
+function cpt_get_album_explicit_owner_id(int $album_id): ?int
+{
+	$ownership_column = cpt_get_album_ownership_column();
+	if ($ownership_column === null) {
+		return null;
+	}
+
+	$res = pwg_query('SELECT '.$ownership_column.' AS owner_id FROM '.CATEGORIES_TABLE.' WHERE id='.(int) $album_id.' LIMIT 1');
+	if (!$res) {
+		return null;
+	}
+
+	$row = pwg_db_fetch_assoc($res);
+	if (!$row || !isset($row['owner_id']) || $row['owner_id'] === null || $row['owner_id'] === '') {
+		return null;
+	}
+
+	return (int) $row['owner_id'];
 }
 
 /**
@@ -265,11 +544,12 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false): void
 				// Remove any existing explicit permissions first to avoid duplication
 				pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int)$album_id);
 				// Grant album owner + admin (user_id=1) access
-				// Need owner id: try categories.user_id if exists, else attempt fallback detection via first image added_by
+				// Need owner id: try the detected ownership column first, else attempt fallback detection via first image added_by
 				$owner_id = null;
-				if (cpt_has_album_ownership_column()) {
-					$resO = pwg_query('SELECT user_id FROM '.CATEGORIES_TABLE.' WHERE id='.(int)$album_id.' LIMIT 1');
-					if ($resO) { $rowO = pwg_db_fetch_assoc($resO); $owner_id = isset($rowO['user_id']) ? (int)$rowO['user_id'] : null; }
+				$ownership_column = cpt_get_album_ownership_column();
+				if ($ownership_column !== null) {
+					$resO = pwg_query('SELECT '.$ownership_column.' AS owner_id FROM '.CATEGORIES_TABLE.' WHERE id='.(int)$album_id.' LIMIT 1');
+					if ($resO) { $rowO = pwg_db_fetch_assoc($resO); $owner_id = isset($rowO['owner_id']) ? (int)$rowO['owner_id'] : null; }
 				}
 				if ($owner_id === null) {
 					$resImg = pwg_query('SELECT i.added_by FROM '.IMAGE_CATEGORY_TABLE.' ic INNER JOIN '.IMAGES_TABLE.' i ON i.id=ic.image_id WHERE ic.category_id='.(int)$album_id.' ORDER BY i.id ASC LIMIT 1');
@@ -296,24 +576,60 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false): void
 }
 
 /**
- * Detect if Community plugin ownership column exists on categories table.
+ * Fetch the current status for a single album.
  */
-function cpt_has_album_ownership_column(): bool
+function cpt_get_album_status(int $album_id): ?string
 {
-	static $cache = null;
+	$result = pwg_query('SELECT status FROM '.CATEGORIES_TABLE.' WHERE id='.(int) $album_id.' LIMIT 1');
+	if (!$result) {
+		return null;
+	}
+
+	$row = pwg_db_fetch_assoc($result);
+	if (!$row || !isset($row['status'])) {
+		return null;
+	}
+
+	return (string) $row['status'];
+}
+
+/**
+ * Detect which album ownership column exists on categories table.
+ * Community 16 uses community_user; older code may still use user_id.
+ */
+function cpt_get_album_ownership_column(): ?string
+{
 	// Test harness override (non-production). If set, bypass detection cost & static cache.
 	if (isset($GLOBALS['__cpt_force_ownership_column'])) {
-		return (bool)$GLOBALS['__cpt_force_ownership_column'];
+		if (is_string($GLOBALS['__cpt_force_ownership_column'])) {
+			return $GLOBALS['__cpt_force_ownership_column'];
+		}
+		return $GLOBALS['__cpt_force_ownership_column'] ? 'user_id' : null;
 	}
-	if ($cache !== null) { return $cache; }
-	$cache = false;
+	if (array_key_exists('__cpt_ownership_column_cache', $GLOBALS)) {
+		return $GLOBALS['__cpt_ownership_column_cache'];
+	}
+	$GLOBALS['__cpt_ownership_column_cache'] = null;
 	$res = pwg_query('DESC '.CATEGORIES_TABLE);
 	if ($res) {
+		$columns = array();
 		while ($row = pwg_db_fetch_assoc($res)) {
-			if (isset($row['Field']) && $row['Field'] === 'user_id') { $cache = true; break; }
+			if (isset($row['Field'])) {
+				$columns[] = $row['Field'];
+			}
+		}
+		if (in_array('community_user', $columns, true)) {
+			$GLOBALS['__cpt_ownership_column_cache'] = 'community_user';
+		} elseif (in_array('user_id', $columns, true)) {
+			$GLOBALS['__cpt_ownership_column_cache'] = 'user_id';
 		}
 	}
-	return $cache;
+	return $GLOBALS['__cpt_ownership_column_cache'];
+}
+
+function cpt_has_album_ownership_column(): bool
+{
+	return cpt_get_album_ownership_column() !== null;
 }
 
 /**

@@ -1,6 +1,132 @@
 (function () {
   "use strict";
 
+  function setStatusMessage(root, message, isError) {
+    var statusBox = root.querySelector(".cpt-status");
+    if (!statusBox) {
+      return;
+    }
+
+    statusBox.hidden = !message;
+    statusBox.textContent = message || "";
+    statusBox.className =
+      "cpt-status alert " + (isError ? "alert-danger" : "alert-success");
+  }
+
+  function collectAlbumPayload(root) {
+    var albums = root.querySelectorAll(".cpt-album[data-album-id]");
+    var payload = {};
+
+    for (var i = 0; i < albums.length; i++) {
+      var album = albums[i];
+      var albumId = album.getAttribute("data-album-id");
+      if (!albumId) {
+        continue;
+      }
+
+      var nameField = album.querySelector(
+        'input[name="cpt_album[' + albumId + '][name]"]',
+      );
+      var commentField = album.querySelector(
+        'textarea[name="cpt_album[' + albumId + '][comment]"]',
+      );
+      var privateField = album.querySelector(
+        'input[name="cpt_album[' + albumId + '][private]"]',
+      );
+      payload[albumId] = {
+        name: nameField ? nameField.value : "",
+        comment: commentField ? commentField.value : "",
+      };
+
+      if (privateField && privateField.checked) {
+        payload[albumId].private = "1";
+      }
+    }
+
+    return payload;
+  }
+
+  function updateAlbumHeaders(root, payload) {
+    Object.keys(payload).forEach(function (albumId) {
+      var header = root.querySelector(
+        '.cpt-album[data-album-id="' + albumId + '"] .card-header strong',
+      );
+      if (!header || !header.parentNode) {
+        return;
+      }
+      header.parentNode.lastChild.textContent =
+        " " + (payload[albumId].name || "");
+    });
+  }
+
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest(".cpt-save-button");
+    if (!button) {
+      return;
+    }
+
+    var manager = button.closest(".cpt-album-manager");
+    var tokenField = document.getElementById("pwg_token");
+    if (!manager || !tokenField || !tokenField.value) {
+      return;
+    }
+
+    var payload = collectAlbumPayload(manager);
+    var params = new URLSearchParams();
+    params.set("pwg_token", tokenField.value);
+    params.set("payload", JSON.stringify(payload));
+
+    setStatusMessage(manager, "", false);
+    button.disabled = true;
+
+    fetch("ws.php?format=json&method=core_privacy_toggle.albums.update", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      },
+      body: params.toString(),
+      credentials: "same-origin",
+    })
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (data) {
+        if (data && data.stat === "ok") {
+          updateAlbumHeaders(manager, payload);
+          setStatusMessage(
+            manager,
+            data.result ||
+              window.CPT_I18N_SAVE_SUCCESS ||
+              "Your changes have been saved.",
+            false,
+          );
+          if (typeof window.pwgToaster === "function") {
+            window.pwgToaster({ text: data.result, icon: "success" });
+          }
+          return;
+        }
+
+        var message =
+          data && data.message
+            ? data.message
+            : window.CPT_I18N_SAVE_ERROR || "An error has occurred.";
+        setStatusMessage(manager, message, true);
+        if (typeof window.pwgToaster === "function") {
+          window.pwgToaster({ text: message, icon: "error" });
+        }
+      })
+      .catch(function () {
+        var message = window.CPT_I18N_SAVE_ERROR || "An error has occurred.";
+        setStatusMessage(manager, message, true);
+        if (typeof window.pwgToaster === "function") {
+          window.pwgToaster({ text: message, icon: "error" });
+        }
+      })
+      .finally(function () {
+        button.disabled = false;
+      });
+  });
+
   document.addEventListener("DOMContentLoaded", function () {
     if (
       typeof window.CPT_ALBUM_HTML !== "string" ||
@@ -28,6 +154,9 @@
     if (!form) {
       return;
     }
+    if (form.querySelector(".cpt-album-manager")) {
+      return;
+    }
     if (form.classList.contains("cpt-enhanced")) {
       return;
     }
@@ -50,19 +179,12 @@
     // Preserve accessibility by providing an aria-label instead of a legend.
     fs.setAttribute(
       "aria-label",
-      window.CPT_I18N_MY_GALLERIES || "My Galleries"
+      window.CPT_I18N_MY_GALLERIES || "My Galleries",
     );
     var container = document.createElement("div");
     container.className = "cpt-section-body";
     container.innerHTML = window.CPT_ALBUM_HTML;
     fs.appendChild(container);
-
-    // Hidden marker so server can verify presence even if no albums changed
-    var marker = document.createElement("input");
-    marker.type = "hidden";
-    marker.name = "cpt_album_marker";
-    marker.value = "1";
-    fs.appendChild(marker);
 
     // Always insert at the very top of the form for robustness
     if (form.firstChild) {
