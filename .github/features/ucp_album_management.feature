@@ -25,7 +25,7 @@ Feature: Album Self-Management in User Control Panel
     Given I am logged in as "gallery_owner"
     And I am on my profile page
     And I see the "My Galleries" section
-    When I check the "Make this gallery private" box for the album "My Trip Photos"
+    When I choose "Private" in the visibility selector for the album "My Trip Photos"
     And I click the "Save Changes" button
     Then I should see a "Your changes have been saved." confirmation message
     
@@ -39,7 +39,7 @@ Feature: Album Self-Management in User Control Panel
     And I am logged in as "gallery_owner"
     And I am on my profile page
     And I see the "My Galleries" section
-    When I uncheck the "Make this gallery private" box for the album "My Secret Project"
+    When I choose "Public" in the visibility selector for the album "My Secret Project"
     And I click the "Save Changes" button
     Then I should see a "Your changes have been saved." confirmation message
     
@@ -69,6 +69,20 @@ Feature: Album Self-Management in User Control Panel
     And I click the "Save Changes" button
     Then I should see a "Your changes have been saved." confirmation message
     And the name field for the album should contain "Amazing Alpine Adventure"
+
+  Scenario: Owner can share an album with selected users from the UCP editor
+    Given I am logged in as "gallery_owner"
+    And I am on my profile page
+    And I see the "My Galleries" section
+    When I choose "Shared with selected users" in the visibility selector for the album "My Trip Photos"
+    And I select "regular_visitor" in the shared users picker for the album "My Trip Photos"
+    And I click the "Save Changes" button
+    Then I should see a "Your changes have been saved." confirmation message
+
+    When I log out
+    And I log in as "regular_visitor"
+    And I go to the main gallery
+    Then I should see the album "My Trip Photos"
 
   Scenario: Owner sees the album-page privacy shortcut on an owned public album
     Given I am logged in as "gallery_owner"

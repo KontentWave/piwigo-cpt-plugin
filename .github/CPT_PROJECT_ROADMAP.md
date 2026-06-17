@@ -6,7 +6,7 @@ To empower Piwigo gallery owners by seamlessly integrating powerful album manage
 
 ### Current State Snapshot
 
-Phase 1 is now delivered in practice: profile and UCP album editing is live, album privacy can also be toggled from public and mobile album pages, current Community ownership metadata is supported, and the plugin has working translations for the active gallery languages. The roadmap below therefore focuses on what remains, not on the already-completed MVP baseline.
+Phase 1 is now delivered in practice: profile and UCP album editing is live, album privacy can also be toggled from public and mobile album pages, current Community ownership metadata is supported, album-level selected-user sharing is implemented in the UCP, and the plugin has working translations for the active gallery languages. The roadmap below therefore focuses on what remains, not on the already-completed MVP baseline.
 
 ### Phase 1 (MVP): UCP Album Management Basics
 
@@ -21,6 +21,7 @@ This phase constitutes our **Minimal Viable Product (MVP)**. It delivers the cor
 Delivered extras beyond the original MVP definition:
 
 - **Public/Mobile Album Privacy Shortcut:** Owners can switch the current album between public and private directly from the album page.
+- **Album Sharing in UCP:** Owners can set a managed album to public, private, or shared with a selected allow-list of users.
 - **Modern Community Compatibility:** Ownership works with `categories.community_user`, legacy `categories.user_id`, and the exclusive-contributor fallback for incomplete metadata.
 - **Expanded Localization:** CPT strings are available for the gallery languages currently in use.
 

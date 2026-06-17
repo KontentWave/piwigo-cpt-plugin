@@ -12,9 +12,9 @@ Empower non-admin gallery owners by integrating album management controls direct
 
 Initial concept used an ARIA tabbed interface. During integration with varied themes (e.g. Bootstrap Darkroom) we simplified to a progressive enhancement that injects a single structured fieldset section ("My Galleries") into the existing profile form. This reduced fragility, avoided layout clashes, and preserved full functionality with JavaScript disabled (the section simply does not appear when no albums qualify).
 
-### `Status` (As of 2026-06-16)
+### `Status` (As of 2026-06-17)
 
-Phase 1 functionality is fully implemented and validated. The plugin now covers profile and UCP album editing, owner-only album privacy toggling on public and mobile album pages, current Community ownership schemas, multilingual rollout for the active gallery languages, and a focused PHPUnit regression suite. Representative image selection remains deferred and is still the clearest next CPT feature.
+Phase 1 functionality is fully implemented and validated, and the first Phase 2 extension is now in place: album owners can share an album with a selected allow-list of users from the profile/UCP editor. The plugin now covers profile and UCP album editing, owner-only album privacy toggling on public and mobile album pages, current Community ownership schemas, album-level selected-user sharing, multilingual rollout for the active gallery languages, and a focused PHPUnit regression suite. Representative image selection remains deferred and is still the clearest next CPT feature.
 
 ### Implementation Summary
 
@@ -31,15 +31,15 @@ Delivered components & behaviors:
 6. **Progressive Enhancement Injection**: Server renders partial string → exported through inline JS → client script injects inside existing profile `<form>` (no nested forms) with accessibility preserved (`aria-label`).
 7. **AJAX Save Path**: A plugin webservice endpoint mirrors profile updates so theme-specific profile pages can save album changes without relying on a classic full-page form POST.
 8. **Submission & Validation**: Unified server-side update handling validates ownership per album, applies sanitized updates, and exposes inline success and error feedback.
-9. **Privacy Toggle & Permission Sync**: Switching to private inserts explicit `user_access` rows (admin + owner); switching to public removes them. Permission changes trigger user cache purge for immediate visibility updates across sessions.
+9. **Privacy Modes & Permission Sync**: UCP editing now supports `public`, `private`, and `shared with selected users`. Switching to private inserts explicit `user_access` rows (admin + owner), switching to shared writes explicit `user_access` rows (admin + owner + selected users), and switching to public removes them. Permission changes trigger user cache purge for immediate visibility updates across sessions.
 10. **Cache Invalidation**: Purges `user_cache` table entries after privacy transition; session flag supports subsequent permission recalculation.
 11. **Public/Mobile Album Shortcut**: Owner-only album page control allows toggling the current album between public and private directly from the public gallery, including Smart Pocket support.
-12. **Internationalization**: Visible plugin strings are localized for `en_UK`, `fr_FR`, `sk_SK`, `es_ES`, `hu_HU`, `ru_RU`, `uk_UA`, and `zh_CN`, including admin/help text and album-page toggle labels.
+12. **Internationalization**: Visible plugin strings are localized for `en_UK`, `fr_FR`, `sk_SK`, `es_ES`, `hu_HU`, `ru_RU`, `uk_UA`, and `zh_CN`, including admin/help text, album-page toggle labels, and the newer visibility/share controls. Native-script translations are now used for Russian, Ukrainian, and Simplified Chinese instead of transliterated placeholders.
 13. **Fallback Messaging**: Admin diagnostic hint for missing ownership column; user-facing limited mode banner when operating via fallback heuristic only.
-14. **Security**: Ownership re‑checked server-side for every album before write; only whitelisted columns updated; status constrained to `public|private`; album-page actions require a valid `pwg_token`.
+14. **Security**: Ownership re‑checked server-side for every album before write; only whitelisted columns updated; UCP visibility constrained to `public|private|shared` with selected users validated against real shareable accounts; album-page actions remain constrained to `public|private` and require a valid `pwg_token`.
 15. **Accessibility**: Semantic form controls, proper labels, grouped cards; removal of duplicate legends while retaining screen-reader context via `aria-label`.
 16. **Styling & Theme Compatibility**: Profile UI uses host theme styles; public and mobile toggle ships dedicated lightweight CSS and JS because Smart Pocket does not render the standard plugin content slot.
-17. **Testing**: Comprehensive PHPUnit suite covers logic, security, edge cases, privacy transitions, and ownership regressions. Final validated state: `OK (13 tests, 42 assertions)`.
+17. **Testing**: Comprehensive PHPUnit suite covers logic, security, edge cases, privacy transitions, sharing permission sync, and ownership regressions. Final validated state: `OK (16 tests, 49 assertions)`.
 18. **CI**: GitHub Actions workflows for PHPUnit and Cypress integrated.
 
 ### Remaining (Deferred) Items
@@ -64,7 +64,7 @@ Current implementation relies solely on native HTML form semantics:
 ### Security & Validation
 
 - Server is sole authority: each album update gated by ownership / exclusive-contributor check.
-- SQL built with escaped values; status constrained to allowed set.
+- SQL built with escaped values; visibility constrained to the allowed set and shared user ids filtered against shareable accounts.
 - Early returns keep logic small and auditable.
 
 ### Testing Plan (Adjusted)
@@ -82,6 +82,7 @@ Covered by test classes in `core_privacy_toggle/tests/`:
 4. `AlbumFieldPersistenceTest` – Name, comment, and status (`public`→`private`) update persists with UTF‑8 characters.
 5. `FallbackUpdateTest` – Updates permitted/denied via fallback heuristic (exclusive contributor vs. mixed contributors) when ownership column missing.
 6. `AlbumEdgeCasesTest` – Blank name ignored (original retained), whitespace-only comment stored as empty string, long multi-byte description persists.
+7. `AlbumSharingTest` – Shared visibility writes admin + owner + selected-user access rows, empty shared selection degrades to private, and shareable user options exclude owner/admin.
 
 Additional behaviors explicitly / implicitly exercised:
 
@@ -106,17 +107,18 @@ Deferred / Not Unit-Tested Yet (future candidates):
 7. Theme-driven profile page can save CPT album changes through the `core_privacy_toggle.albums.update` webservice path.
 8. Album owner sees the public/mobile album-page privacy shortcut on their own album page.
 9. Album-page shortcut can switch an owned album from public to private and back again.
+10. Album owner can switch a managed album to `Shared with selected users` in the UCP editor and preserve access for the chosen users only.
 
 ### Deferred / Out of Scope (for MVP)
 
 - Representative image selection UI.
-- Bulk permission artifact adjustments beyond status flag.
+- Per-photo or per-group ACL redesign beyond album-level owner sharing.
 - Advanced pagination or search across large album sets.
 - Full ARIA tab widget (replaced by simpler section).
 
 ### Operational Notes
 
-- Asset injection uses both head and footer regions with a guard to survive theme variance.
+- Album-page CSS and JS are registered early through Piwigo's combined asset loaders, while the Smart Pocket body insertion shim still uses runtime JS because that theme skips the standard public plugin slot.
 - Fallback may be replaced by native ownership once Community (or another plugin) populates a supported ownership column.
 - Clearing template cache or hard-refresh may be needed after deploying updated JS or template partials.
 - Smart Pocket support depends on JS insertion because that theme does not render `PLUGIN_INDEX_CONTENT_BEGIN` on album pages.
@@ -128,6 +130,121 @@ Deferred / Not Unit-Tested Yet (future candidates):
 - Add representative image selection via thumbnail chooser with lazy loading.
 - Provide REST/WebService endpoints mirroring the profile functionality for SPA or mobile clients.
 - Consider a future owner-grouped album landing page if the gallery needs an upper display level above individual user albums.
+
+### Phase 2 Design Notes
+
+#### Album-Level Sharing With Selected Users (Implemented in first iteration)
+
+This remains inside CPT scope because it extends album-level ownership and visibility, not Community photo-level privacy.
+
+**Target states**
+
+- `public`: visible to everyone.
+- `private`: visible to owner + admin only.
+- `shared`: visible to owner + admin + a selected set of users.
+
+**Data model**
+
+- `categories.status` continues to hold the high-level album visibility flag.
+- `USER_ACCESS_TABLE` continues to hold the explicit allow-list for album viewers.
+- No CPT-specific table was required for the first implementation because selected user ids are reconstructed from `USER_ACCESS_TABLE`.
+- When `shared` or `private` is enabled, CPT becomes the authority for the album’s explicit `user_access` rows.
+
+**Permission sync rules**
+
+- `public`:
+  - set album status to `public`
+  - delete CPT-managed `user_access` rows for that album
+- `private`:
+  - set album status to `private`
+  - write explicit `user_access` rows for admin + owner
+- `shared`:
+  - set album status to `private`
+  - write explicit `user_access` rows for admin + owner + selected users
+
+**UI model**
+
+- The original privacy checkbox in the UCP manager is now replaced by a visibility selector:
+  - `Public`
+  - `Private`
+  - `Shared with selected users`
+- When `Shared with selected users` is chosen, a multi-select user picker is revealed below the selector.
+- The album-page quick toggle remains intentionally simple: public/private only. Shared-user management stays in the profile/UCP editor to avoid cramming advanced ACL editing into the public page.
+
+**Validation rules**
+
+- Owner cannot remove their own access.
+- Admin access should always be preserved.
+- Empty selected-user list under `shared` currently degrades to `private`.
+- Only valid shareable user ids are stored.
+
+**Code touchpoints**
+
+- `include/functions.inc.php`
+  - parses and persists `visibility` plus `shared_users`
+  - loads current explicit viewers for owned albums
+  - synchronizes `user_access` rows for `shared`
+- `template/ucp_album_manager.tpl`
+  - renders the visibility mode control and selected-user picker area
+- `js/ucp_tabs.js`
+  - collects the richer payload and progressively reveals the selected-user UI
+- tests
+  - cover `shared` permission sync and shareable-user filtering
+
+**Non-goals**
+
+- Per-photo selected-user access
+- Group-based photo ACL redesign
+- Community plugin photo visibility changes
+
+#### Representative Image Selection
+
+This is still the cleanest next CPT feature because it is already album-scoped and matches the roadmap.
+
+**Goal**
+
+- Let an album owner choose the album’s representative image from photos already linked to that owned album.
+
+**Data model**
+
+- Reuse Piwigo’s native category representative image field rather than inventing CPT-specific storage.
+- CPT only controls whether the owner is allowed to change that field for owned albums.
+
+**UI model**
+
+- Add a `Choose cover image` action per album inside the UCP manager.
+- Expand a thumbnail chooser for photos linked to that album.
+- Show the current representative image state if one exists.
+- Allow clearing the representative image so the album falls back to Piwigo’s default behavior.
+
+**Fetch strategy**
+
+- Add a helper that retrieves lightweight image metadata for a single owned album:
+  - image id
+  - title / name
+  - path needed to build thumb derivatives
+- Load thumbnails on demand, not all at once for every album, to avoid bloating the initial profile payload.
+
+**Persistence rules**
+
+- Only the album owner may update the representative image.
+- The chosen image must already belong to the target album.
+- After update, invalidate any category/image caches necessary for the new representative to show immediately.
+
+**Code touchpoints**
+
+- `include/functions.inc.php`
+  - new fetch helper for album images
+  - new update helper for representative image changes
+  - ownership + membership validation for chosen image ids
+- `template/ucp_album_manager.tpl`
+  - chooser trigger, selected-state UI, and current cover preview
+- `js/ucp_tabs.js`
+  - on-demand thumbnail loading and selection state handling
+- tests
+  - positive case: owner sets representative image from same album
+  - negative case: image from another album rejected
+  - edge case: clearing representative image restores default behavior
 
 ### Continuous Integration
 
@@ -233,7 +350,7 @@ A comprehensive audit was conducted across Security, Performance, Reliability, a
 
 **Testing Infrastructure:**
 
-- **Unit Tests**: 6 comprehensive test classes covering security, permissions, edge cases, and ownership regressions
+- **Unit Tests**: 7 comprehensive test classes covering security, permissions, sharing ACL sync, edge cases, and ownership regressions
 - **E2E Tests**: Cypress smoke tests + Gherkin feature specifications
 - **Test Isolation**: In-memory database simulation prevents external dependencies
 - **CI Integration**: Automated testing on all plugin file changes

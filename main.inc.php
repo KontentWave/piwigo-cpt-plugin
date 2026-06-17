@@ -35,6 +35,7 @@ global $prefixeTable;
 
 define('CORE_PRIVACY_TOGGLE_ID',      basename(dirname(__FILE__)));
 define('CORE_PRIVACY_TOGGLE_PATH' ,   PHPWG_PLUGINS_PATH . CORE_PRIVACY_TOGGLE_ID . '/');
+define('CORE_PRIVACY_TOGGLE_PUBLIC',  get_root_url() . 'plugins/' . CORE_PRIVACY_TOGGLE_ID . '/');
 define('CORE_PRIVACY_TOGGLE_ADMIN',   get_root_url() . 'admin.php?page=plugin-' . CORE_PRIVACY_TOGGLE_ID);
 // Debug flag (set to true only during development)
 if (!defined('CPT_DEBUG')) { define('CPT_DEBUG', false); }
@@ -52,6 +53,7 @@ add_event_handler('init', 'core_privacy_toggle_init');
 
 // user profile enhancement (UCP) - album management tabs (progressive enhancement)
 add_event_handler('loc_begin_profile', 'cpt_setup_ucp_tabs');
+add_event_handler('loc_begin_index', 'cpt_prepare_album_page_toggle');
 add_event_handler('loc_begin_index', 'cpt_handle_album_page_toggle');
 add_event_handler('loc_end_index', 'cpt_attach_album_page_toggle');
 add_event_handler('ws_add_methods', 'cpt_add_ws_methods');

@@ -30,20 +30,53 @@
       var commentField = album.querySelector(
         'textarea[name="cpt_album[' + albumId + '][comment]"]',
       );
-      var privateField = album.querySelector(
-        'input[name="cpt_album[' + albumId + '][private]"]',
+      var visibilityField = album.querySelector(
+        'select[name="cpt_album[' + albumId + '][visibility]"]',
+      );
+      var sharedUsersField = album.querySelector(
+        'select[name="cpt_album[' + albumId + '][shared_users][]"]',
       );
       payload[albumId] = {
         name: nameField ? nameField.value : "",
         comment: commentField ? commentField.value : "",
+        visibility: visibilityField ? visibilityField.value : "public",
       };
 
-      if (privateField && privateField.checked) {
-        payload[albumId].private = "1";
+      if (sharedUsersField && payload[albumId].visibility === "shared") {
+        payload[albumId].shared_users = Array.prototype.slice
+          .call(sharedUsersField.options)
+          .filter(function (option) {
+            return option.selected;
+          })
+          .map(function (option) {
+            return option.value;
+          });
       }
     }
 
     return payload;
+  }
+
+  function syncSharedUsersVisibility(album) {
+    var visibilityField = album.querySelector(".cpt-visibility-select");
+    var sharedGroup = album.querySelector(".cpt-shared-users-group");
+    var sharedSelect = album.querySelector(".cpt-shared-users-select");
+    if (!visibilityField || !sharedGroup) {
+      return;
+    }
+
+    var isShared = visibilityField.value === "shared";
+    sharedGroup.hidden = !isShared;
+    if (sharedSelect) {
+      sharedSelect.disabled = !isShared;
+    }
+  }
+
+  function initAlbumManager(root) {
+    var albums = root.querySelectorAll(".cpt-album[data-album-id]");
+    for (var i = 0; i < albums.length; i++) {
+      syncSharedUsersVisibility(albums[i]);
+    }
   }
 
   function updateAlbumHeaders(root, payload) {
@@ -127,6 +160,20 @@
       });
   });
 
+  document.addEventListener("change", function (event) {
+    var visibilityField = event.target.closest(".cpt-visibility-select");
+    if (!visibilityField) {
+      return;
+    }
+
+    var album = visibilityField.closest(".cpt-album[data-album-id]");
+    if (!album) {
+      return;
+    }
+
+    syncSharedUsersVisibility(album);
+  });
+
   document.addEventListener("DOMContentLoaded", function () {
     if (
       typeof window.CPT_ALBUM_HTML !== "string" ||
@@ -200,5 +247,7 @@
         form.appendChild(fs);
       }
     }
+
+    initAlbumManager(fs);
   });
 })();

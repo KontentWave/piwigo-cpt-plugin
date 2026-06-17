@@ -26,11 +26,28 @@
                 </div>
               </div>
               <div class="form-group row mb-1">
-                <div class="col-12 col-md-7 offset-md-3">
-                  <div class="form-check">
-                    <input type="checkbox" class="form-check-input" id="cpt-private-{$ALBUM.id|escape}" name="cpt_album[{$ALBUM.id|escape}][private]" {if $ALBUM.status=='private'}checked{/if} />
-                    <label class="form-check-label" for="cpt-private-{$ALBUM.id|escape}">{'Make this gallery private'|@translate}</label>
-                  </div>
+                <label for="cpt-visibility-{$ALBUM.id|escape}" class="col-12 col-md-3 col-form-label">{'Visibility'|@translate}</label>
+                <div class="col-12 col-md-7">
+                  <select class="form-control cpt-visibility-select" id="cpt-visibility-{$ALBUM.id|escape}" name="cpt_album[{$ALBUM.id|escape}][visibility]">
+                    <option value="public" {if $ALBUM.visibility=='public'}selected{/if}>{'Public'|@translate}</option>
+                    <option value="private" {if $ALBUM.visibility=='private'}selected{/if}>{'Private'|@translate}</option>
+                    <option value="shared" {if $ALBUM.visibility=='shared'}selected{/if}>{'Shared with selected users'|@translate}</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group row mb-1 cpt-shared-users-group" {if $ALBUM.visibility!='shared'}hidden{/if}>
+                <label for="cpt-shared-users-{$ALBUM.id|escape}" class="col-12 col-md-3 col-form-label">{'People with access'|@translate}</label>
+                <div class="col-12 col-md-7">
+                  {if isset($CPT_SHAREABLE_USERS) && $CPT_SHAREABLE_USERS|@count > 0}
+                    <select class="form-control cpt-shared-users-select" id="cpt-shared-users-{$ALBUM.id|escape}" name="cpt_album[{$ALBUM.id|escape}][shared_users][]" multiple="multiple" size="5">
+                      {foreach from=$CPT_SHAREABLE_USERS key=SHARED_USER_ID item=SHARED_USERNAME}
+                        <option value="{$SHARED_USER_ID|escape}" {if isset($ALBUM.shared_user_lookup[$SHARED_USER_ID])}selected{/if}>{$SHARED_USERNAME|escape}</option>
+                      {/foreach}
+                    </select>
+                    <small class="form-text text-muted">{'Select one or more users to keep this gallery shared.'|@translate}</small>
+                  {else}
+                    <p class="form-text text-muted mb-0">{'No other users are available for sharing.'|@translate}</p>
+                  {/if}
                 </div>
               </div>
             </div>

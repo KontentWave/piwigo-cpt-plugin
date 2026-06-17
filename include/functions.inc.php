@@ -1,6 +1,10 @@
 <?php
 defined('CORE_PRIVACY_TOGGLE_PATH') or die('Hacking attempt!');
 
+if (!defined('CORE_PRIVACY_TOGGLE_PUBLIC')) {
+	define('CORE_PRIVACY_TOGGLE_PUBLIC', get_root_url().'plugins/'.basename(dirname(__DIR__)).'/');
+}
+
 /**
  * Set up User Control Panel album management (progressive enhancement).
  * Early exit if user owns no albums. Exposes template partial to JS and processes POST.
@@ -57,6 +61,7 @@ function cpt_setup_ucp_tabs(): void
 	}
 
 		$template->assign('UCP_ALBUMS', $albums);
+		$template->assign('CPT_SHAREABLE_USERS', cpt_get_shareable_user_options($user_id));
 
 		// Render partial (will be injected by JS; contains only inner controls)
 		// Use set_filename + parse instead of fetch (fetch not available in this env)
@@ -64,6 +69,49 @@ function cpt_setup_ucp_tabs(): void
 		$partial = $template->parse('cpt_ucp_album_manager', true);
 		cpt_attach_album_manager_to_profile();
 		cpt_inject_album_manager_assets($partial);
+}
+
+/**
+ * Register album-page assets early enough for the page header/footer loaders.
+ */
+function cpt_prepare_album_page_toggle(): void
+{
+	global $template, $user;
+
+	if (empty($user['id'])) {
+		return;
+	}
+
+	$category = cpt_get_current_album_page_category();
+	if ($category === null) {
+		return;
+	}
+
+	$album_id = (int) $category['id'];
+	$user_id = (int) $user['id'];
+	if (!cpt_album_is_owned_by($album_id, $user_id)) {
+		return;
+	}
+
+	$css_path = CORE_PRIVACY_TOGGLE_PATH.'template/album_page_toggle.css';
+	if (file_exists($css_path) && isset($template->cssLoader)) {
+		$template->func_combine_css(array(
+			'id' => 'cpt-album-page-toggle',
+			'path' => 'plugins/'.CORE_PRIVACY_TOGGLE_ID.'/template/album_page_toggle.css',
+			'version' => filemtime($css_path),
+			'order' => 10,
+		));
+	}
+
+	$script_path = CORE_PRIVACY_TOGGLE_PATH.'js/album_page_toggle.js';
+	if (file_exists($script_path) && isset($template->scriptLoader)) {
+		$template->func_combine_script(array(
+			'id' => 'cpt-album-page-toggle',
+			'path' => 'plugins/'.CORE_PRIVACY_TOGGLE_ID.'/js/album_page_toggle.js',
+			'load' => 'footer',
+			'version' => filemtime($script_path),
+		));
+	}
 }
 
 /**
@@ -192,26 +240,9 @@ function cpt_inject_album_page_toggle_assets(string $html_partial): void
 	$json = json_encode($html_partial, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT);
 	$inline = 'window.CPT_ALBUM_PAGE_HTML = '.$json.';window.CPT_ALBUM_PAGE_ASSETS_READY=1;';
 
-	$css_path = CORE_PRIVACY_TOGGLE_PATH.'template/album_page_toggle.css';
-	$css_ver = '';
-	if (file_exists($css_path)) { $css_ver = '?v='.filemtime($css_path); }
-	$path = CORE_PRIVACY_TOGGLE_PATH.'js/album_page_toggle.js';
-	$ver = '';
-	if (file_exists($path)) { $ver = '?v='.filemtime($path); }
-
 	global $template;
-	if (method_exists($template, 'append')) {
-		if (file_exists($css_path)) {
-			$template->append('head_elements', '<link rel="stylesheet" href="'.htmlspecialchars($css_path.$css_ver, ENT_QUOTES).'">');
-		}
-		$template->append('head_elements', '<script>'.$inline.'</script>');
-		if (file_exists($path)) {
-			$template->append('head_elements', '<script src="'.htmlspecialchars($path.$ver, ENT_QUOTES).'"></script>');
-		}
-		$template->append('footer_msgs', '<script>window.CPT_ALBUM_PAGE_ASSETS_READY||(function(){'.$inline.'})();</script>');
-		if (file_exists($path)) {
-			$template->append('footer_msgs', '<script src="'.htmlspecialchars($path.$ver, ENT_QUOTES).'"></script>');
-		}
+	if (isset($template->scriptLoader)) {
+		$template->scriptLoader->add_inline($inline, array('cpt-album-page-toggle'));
 	}
 }
 
@@ -274,13 +305,18 @@ function cpt_fetch_albums_owned_by(int $user_id): array
 	$result = pwg_query($query);
 	if (!$result) { return $albums; }
 	while ($row = pwg_db_fetch_assoc($result)) {
+		$album_id = (int)$row['id'];
+		$shared_users = cpt_get_album_shared_user_ids($album_id, (int)$user_id);
 		$albums[] = [
-			'id' => (int)$row['id'],
+			'id' => $album_id,
 			'name' => $row['name'],
 			'comment' => $row['comment'],
 			'status' => $row['status'],
+			'visibility' => cpt_get_album_visibility_mode($album_id, (int)$user_id),
+			'shared_users' => $shared_users,
+			'shared_user_lookup' => array_fill_keys($shared_users, true),
 		];
-		$album_ids[(int)$row['id']] = true;
+		$album_ids[$album_id] = true;
 	}
 
 	foreach (cpt_fetch_albums_contributed_exclusive($user_id) as $album) {
@@ -338,14 +374,69 @@ function cpt_fetch_albums_contributed_exclusive(int $user_id): array
 	$res = pwg_query($sql);
 	if (!$res) { return $albums; }
 	while ($row = pwg_db_fetch_assoc($res)) {
+		$album_id = (int)$row['id'];
+		$shared_users = cpt_get_album_shared_user_ids($album_id, (int)$user_id);
 		$albums[] = [
-			'id' => (int)$row['id'],
+			'id' => $album_id,
 			'name' => $row['name'],
 			'comment' => $row['comment'],
 			'status' => $row['status'],
+			'visibility' => cpt_get_album_visibility_mode($album_id, (int)$user_id),
+			'shared_users' => $shared_users,
+			'shared_user_lookup' => array_fill_keys($shared_users, true),
 		];
 	}
 	return $albums;
+}
+
+function cpt_get_shareable_user_options(int $owner_user_id): array
+{
+	global $conf;
+
+	$guest_id = isset($conf['guest_id']) ? (int) $conf['guest_id'] : 0;
+	$options = [];
+	$query = 'SELECT '.USERS_TABLE.'.'.$conf['user_fields']['id'].' AS user_id, '.USERS_TABLE.'.'.$conf['user_fields']['username'].' AS username FROM '.USERS_TABLE.' WHERE '.USERS_TABLE.'.'.$conf['user_fields']['id'].' NOT IN (1,'.(int) $owner_user_id;
+	if ($guest_id > 0) {
+		$query .= ','.$guest_id;
+	}
+	$query .= ') ORDER BY username';
+	$result = pwg_query($query);
+	if (!$result) {
+		return $options;
+	}
+	while ($row = pwg_db_fetch_assoc($result)) {
+		$options[(int) $row['user_id']] = (string) $row['username'];
+	}
+	return $options;
+}
+
+function cpt_get_album_shared_user_ids(int $album_id, int $owner_user_id): array
+{
+	$shared_user_ids = [];
+	$result = pwg_query('SELECT user_id FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int) $album_id);
+	if (!$result) {
+		return $shared_user_ids;
+	}
+	while ($row = pwg_db_fetch_assoc($result)) {
+		$user_id = (int) ($row['user_id'] ?? 0);
+		if ($user_id <= 0 || $user_id === 1 || $user_id === $owner_user_id) {
+			continue;
+		}
+		$shared_user_ids[] = $user_id;
+	}
+	sort($shared_user_ids);
+	return $shared_user_ids;
+}
+
+function cpt_get_album_visibility_mode(int $album_id, int $owner_user_id): string
+{
+	$status = cpt_get_album_status($album_id) ?? 'public';
+	if ($status !== 'private') {
+		return 'public';
+	}
+
+	$shared_user_ids = cpt_get_album_shared_user_ids($album_id, $owner_user_id);
+	return empty($shared_user_ids) ? 'private' : 'shared';
 }
 
 /**
@@ -361,6 +452,7 @@ function cpt_inject_album_manager_assets(string $html_partial): void
 	$inline = 'window.CPT_ALBUM_HTML = '.$json.';window.CPT_I18N_MY_GALLERIES='.$legend.';window.CPT_I18N_SAVE_SUCCESS='.$save_success.';window.CPT_I18N_SAVE_ERROR='.$save_error.';window.CPT_ASSETS_READY=1;';
 
 	$path = CORE_PRIVACY_TOGGLE_PATH.'js/ucp_tabs.js';
+	$url = CORE_PRIVACY_TOGGLE_PUBLIC.'js/ucp_tabs.js';
 	$ver = '';
 	if (file_exists($path)) { $ver = '?v='.filemtime($path); }
 	// Fallback: append to head elements (older themes still honor this)
@@ -369,12 +461,12 @@ function cpt_inject_album_manager_assets(string $html_partial): void
 			// Head injection
 			$template->append('head_elements', '<script>'.$inline.'</script>');
 			if (file_exists($path)) {
-				$template->append('head_elements', '<script src="'.htmlspecialchars($path.$ver, ENT_QUOTES).'"></script>');
+				$template->append('head_elements', '<script src="'.htmlspecialchars($url.$ver, ENT_QUOTES).'"></script>');
 			}
 			// Footer fallback injection (safe due to guard var)
 			$template->append('footer_msgs', '<script>window.CPT_ASSETS_READY||(function(){'.$inline.'})();</script>');
 			if (file_exists($path)) {
-				$template->append('footer_msgs', '<script src="'.htmlspecialchars($path.$ver, ENT_QUOTES).'"></script>');
+				$template->append('footer_msgs', '<script src="'.htmlspecialchars($url.$ver, ENT_QUOTES).'"></script>');
 			}
 		}
 }
@@ -439,7 +531,8 @@ function cpt_handle_album_form(array $payload, int $user_id): bool
 	if ($debug_admin) { global $page; $page['infos'][] = '[CPT debug] album '.$album_id.' ownership check => '.($owns?'true':'false'); }
         if (!$owns) { continue; }
 
-        $updates = [];
+		$updates = [];
+		$permission_options = [];
         if (isset($fields['name'])) {
             $name = trim($fields['name']);
             if ($name !== '') { $updates['name'] = pwg_db_real_escape_string($name); }
@@ -448,11 +541,43 @@ function cpt_handle_album_form(array $payload, int $user_id): bool
             $comment = trim($fields['comment']);
             $updates['comment'] = pwg_db_real_escape_string($comment);
         }
-        $updates['status'] = array_key_exists('private', $fields) ? 'private' : 'public';
+
+		$visibility = 'public';
+		if (isset($fields['visibility']) && in_array($fields['visibility'], array('public', 'private', 'shared'), true)) {
+			$visibility = $fields['visibility'];
+		} elseif (array_key_exists('private', $fields)) {
+			$visibility = 'private';
+		}
+
+		$shareable_options = cpt_get_shareable_user_options($user_id);
+		$selected_shared_user_ids = [];
+		if (!empty($fields['shared_users']) && is_array($fields['shared_users'])) {
+			foreach ($fields['shared_users'] as $shared_user_id) {
+				$shared_user_id = (int) $shared_user_id;
+				if ($shared_user_id > 0 && isset($shareable_options[$shared_user_id])) {
+					$selected_shared_user_ids[$shared_user_id] = $shared_user_id;
+				}
+			}
+		}
+
+		if ($visibility === 'shared') {
+			$selected_shared_user_ids = array_values($selected_shared_user_ids);
+			$updates['status'] = 'private';
+			$permission_options['mode'] = empty($selected_shared_user_ids) ? 'private' : 'shared';
+			$permission_options['shared_user_ids'] = $selected_shared_user_ids;
+		} elseif ($visibility === 'private') {
+			$updates['status'] = 'private';
+			$permission_options['mode'] = 'private';
+			$permission_options['shared_user_ids'] = [];
+		} else {
+			$updates['status'] = 'public';
+			$permission_options['mode'] = 'public';
+			$permission_options['shared_user_ids'] = [];
+		}
 
         if (!empty($updates)) {
 			if ($debug_admin) { global $page; $page['infos'][] = '[CPT debug] updating album '.$album_id.' fields: '.implode(',', array_keys($updates)); }
-            cpt_update_album($album_id, $updates, $debug_admin);
+			cpt_update_album($album_id, $updates, $debug_admin, $permission_options, $user_id);
             $updated_any = true;
         }
     }
@@ -514,7 +639,7 @@ function cpt_get_album_explicit_owner_id(int $album_id): ?int
 /**
  * Low-level update helper. Uses simple dynamic SQL since Piwigo core often builds strings; ensured safe via escaping above.
  */
-function cpt_update_album(int $album_id, array $fields, bool $debug=false): void
+function cpt_update_album(int $album_id, array $fields, bool $debug=false, array $permission_options = [], ?int $owner_user_id = null): void
 {
 	if (empty($fields)) { return; }
 	$old_status = null;
@@ -536,18 +661,23 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false): void
 		if (function_exists('trigger_notify')) { trigger_notify('invalidate_user_cache'); }
 
 		// Synchronize permissions for private/public transitions
-		if (isset($fields['status']) && $old_status !== $fields['status']) {
+		if (isset($fields['status']) && ($old_status !== $fields['status'] || !empty($permission_options))) {
 			// One-shot flag for other sessions to re-evaluate permissions on next request
 			$_SESSION['cpt_permissions_changed'] = 1;
 			$new_status = $fields['status'];
+			$mode = $permission_options['mode'] ?? ($new_status === 'private' ? 'private' : 'public');
+			$shared_user_ids = [];
+			if (!empty($permission_options['shared_user_ids']) && is_array($permission_options['shared_user_ids'])) {
+				$shared_user_ids = array_values(array_unique(array_map('intval', $permission_options['shared_user_ids'])));
+			}
 			if ($new_status === 'private') {
 				// Remove any existing explicit permissions first to avoid duplication
 				pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int)$album_id);
 				// Grant album owner + admin (user_id=1) access
 				// Need owner id: try the detected ownership column first, else attempt fallback detection via first image added_by
-				$owner_id = null;
+				$owner_id = $owner_user_id;
 				$ownership_column = cpt_get_album_ownership_column();
-				if ($ownership_column !== null) {
+				if ($owner_id === null && $ownership_column !== null) {
 					$resO = pwg_query('SELECT '.$ownership_column.' AS owner_id FROM '.CATEGORIES_TABLE.' WHERE id='.(int)$album_id.' LIMIT 1');
 					if ($resO) { $rowO = pwg_db_fetch_assoc($resO); $owner_id = isset($rowO['owner_id']) ? (int)$rowO['owner_id'] : null; }
 				}
@@ -555,9 +685,19 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false): void
 					$resImg = pwg_query('SELECT i.added_by FROM '.IMAGE_CATEGORY_TABLE.' ic INNER JOIN '.IMAGES_TABLE.' i ON i.id=ic.image_id WHERE ic.category_id='.(int)$album_id.' ORDER BY i.id ASC LIMIT 1');
 					if ($resImg) { $rowI = pwg_db_fetch_assoc($resImg); if ($rowI) { $owner_id = (int)$rowI['added_by']; } }
 				}
+				$allowed_user_ids = [1];
+				if ($owner_id !== null && $owner_id > 0) {
+					$allowed_user_ids[] = (int) $owner_id;
+				}
+				if ($mode === 'shared') {
+					$allowed_user_ids = array_merge($allowed_user_ids, $shared_user_ids);
+				}
+				$allowed_user_ids = array_values(array_unique(array_filter($allowed_user_ids, fn($id) => (int) $id > 0)));
+
 				$insValues = [];
-				$insValues[] = '(1,'.(int)$album_id.')'; // admin
-				if ($owner_id !== null && $owner_id !== 1) { $insValues[] = '('.(int)$owner_id.','.(int)$album_id.')'; }
+				foreach ($allowed_user_ids as $allowed_user_id) {
+					$insValues[] = '('.(int) $allowed_user_id.','.(int)$album_id.')';
+				}
 				if (!empty($insValues)) {
 					$permSql = 'INSERT INTO '.USER_ACCESS_TABLE.' (user_id, cat_id) VALUES '.implode(',', $insValues);
 					pwg_query($permSql);
