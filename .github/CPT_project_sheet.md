@@ -92,6 +92,8 @@ Deferred / Not Unit-Tested Yet (future candidates):
 
 - Injection/integration path via `cpt_setup_ucp_tabs` (would require fuller template + POST environment simulation for end-to-end assurance – left to Cypress/E2E scope).
 - Mixed contributor edge cases where images added after initial exclusivity break fallback ownership (can be added if regression discovered).
+- Public/mobile album-page toggle flow is currently validated manually rather than through an automated browser scenario.
+- Theme-driven AJAX profile-save path is implemented and manually validated, but not yet covered by dedicated automated end-to-end tests.
 
 **Cypress / E2E**
 
@@ -101,6 +103,9 @@ Deferred / Not Unit-Tested Yet (future candidates):
 4. Private album hidden from another (non-owner) user after save.
 5. Album made public again becomes visible to other user.
 6. User with no qualifying albums sees no section.
+7. Theme-driven profile page can save CPT album changes through the `core_privacy_toggle.albums.update` webservice path.
+8. Album owner sees the public/mobile album-page privacy shortcut on their own album page.
+9. Album-page shortcut can switch an owned album from public to private and back again.
 
 ### Deferred / Out of Scope (for MVP)
 
@@ -115,6 +120,7 @@ Deferred / Not Unit-Tested Yet (future candidates):
 - Fallback may be replaced by native ownership once Community (or another plugin) populates a supported ownership column.
 - Clearing template cache or hard-refresh may be needed after deploying updated JS or template partials.
 - Smart Pocket support depends on JS insertion because that theme does not render `PLUGIN_INDEX_CONTENT_BEGIN` on album pages.
+- Browser automation coverage should include at least one Smart Pocket/mobile pass because album-page toggle rendering depends on a JS insertion shim rather than the standard plugin slot.
 
 ### Future Considerations
 

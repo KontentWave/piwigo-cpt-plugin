@@ -1,0 +1,12 @@
+name: Core Privacy Toggle
+version: 1.0.0
+uri: https://cores.sk
+author: Marcel Šulák
+author_uri: https://cores.sk
+description: Lets album owners manage album name, description, and privacy from their profile and toggle album privacy directly from public and mobile album pages.
+single_line_description: Album owner self-management for profile and album privacy.
+tags: privacy, community, albums, profile, ownership
+min_piwigo_version: 15.0.0
+max_piwigo_version: 16.99.99
+has_admin: true
+extension: core_privacy_toggle

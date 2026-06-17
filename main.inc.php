@@ -2,8 +2,8 @@
 /*
 Plugin Name: Core Privacy Toggle
 Version: 1.0.0
-Description: Toggle core privacy options in Piwigo.
-Author: Your Name
+Description: Lets album owners manage album details and privacy from their profile and album pages.
+Author: Marcel Slapak
 Author URI: https://cores.sk
 */
 

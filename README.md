@@ -16,7 +16,7 @@ Empower non‑admin gallery users to manage their own albums (name, description,
 | Dual Ownership Model         | Prefers `categories.community_user` (current Community plugin), supports legacy `categories.user_id`, and falls back to an “exclusive contributor” heuristic if neither column exists. |
 | Immediate Visibility Updates | Purges `user_cache` so privacy changes take effect for other users right away.                                                                                                         |
 | Progressive Enhancement      | Works without JavaScript (JS just improves layout).                                                                                                                                    |
-| Internationalization         | English & French translations shipped; easily extendable.                                                                                                                              |
+| Internationalization         | English, French, Slovak, Spanish, Hungarian, Russian, Ukrainian, and Chinese translations shipped; easily extendable.                                                                  |
 | Accessibility                | Native form controls, labelled groups, no keyboard traps.                                                                                                                              |
 | Test Coverage                | PHPUnit logic tests + Cypress smoke test in CI.                                                                                                                                        |
 
@@ -39,7 +39,7 @@ Fallback is intentionally conservative to prevent accidental elevation of contro
 | Smarty Template (`template/ucp_album_manager.tpl`) | Renders inner album inputs (card layout). No form tag or business logic.                             |
 | JavaScript (`js/ucp_tabs.js`)                      | Locates the profile form and injects the rendered partial. Adds hidden marker + accessibility label. |
 | Language Files (`language/*/plugin.lang.php`)      | I18n keys for all UI strings.                                                                        |
-| Styling (theme-driven)                             | Relies on the active theme; no plugin-specific stylesheet is bundled.                                |
+| Styling                                            | Profile UI relies on the active theme; album-page toggle ships a lightweight plugin stylesheet.      |
 | Tests (`tests/`)                                   | In‑memory DB simulation for deterministic logic tests.                                               |
 
 The server always performs validation; the browser never “decides” ownership.
@@ -70,8 +70,8 @@ Cache purge ensures other sessions immediately reflect visibility changes withou
 
 ## 🧩 Progressive Enhancement
 
-Without JavaScript: the server injects a hidden marker + inner markup early so form submission still works.  
-With JavaScript: the fieldset is repositioned (or inserted at top) and styled via cards—no functional dependency on JS.
+Without JavaScript: classic profile form submission still works where the theme posts `profile.php`.  
+With JavaScript: the album manager is injected into the live profile form and saved through a CPT webservice endpoint on AJAX-driven profile pages.
 
 ---
 
@@ -104,12 +104,12 @@ Add a new locale: copy `language/en_UK/plugin.lang.php` → `language/<locale>/p
 
 This Phase 1 implementation was visually tuned against the **Bootstrap Darkroom** theme. Other themes behave as follows:
 
-| Theme              | Status / Observed Behavior | Notes                                                                                        |
-| ------------------ | -------------------------- | -------------------------------------------------------------------------------------------- |
-| Bootstrap Darkroom | Optimized                  | Baseline spacing, card borders, and typography aligned.                                      |
-| Modus              | Minor style drift          | Card padding & heading weight differ; needs small CSS overrides.                             |
-| Elegance           | Minor style drift          | Similar to Modus; neutral styling but lacks card shadow consistency.                         |
-| Smart Pocket       | Not currently styled       | Section does not appear with intended card styling (mobile theme loads different CSS stack). |
+| Theme              | Status / Observed Behavior     | Notes                                                                                                            |
+| ------------------ | ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Bootstrap Darkroom | Optimized                      | Baseline spacing, card borders, and typography aligned.                                                          |
+| Modus              | Minor style drift              | Card padding & heading weight differ; needs small CSS overrides.                                                 |
+| Elegance           | Minor style drift              | Similar to Modus; neutral styling but lacks card shadow consistency.                                             |
+| Smart Pocket       | Supported with album-page shim | Public album privacy toggle is injected with plugin JS/CSS because the theme skips the usual public plugin slot. |
 
 Planned adjustments (Phase 2 or community PRs welcome):
 
@@ -129,9 +129,9 @@ If you test additional themes, please open an issue with a screenshot + theme na
 
 1. User opens Profile page.
 2. Plugin injects the album management card if any owned (or exclusive) albums exist.
-3. User edits fields and submits the main Profile form.
+3. User edits fields and saves either through the classic profile form or the CPT AJAX endpoint used by theme-driven profile pages.
 4. Plugin validates ownership, persists changes, syncs permissions if privacy altered, purges user cache, and adds a confirmation message.
-5. Reload page to verify updated values (or check from a different user session for privacy changes).
+5. Owned album pages also expose a direct privacy toggle on supported public/mobile themes.
 
 ---
 
@@ -148,7 +148,7 @@ Planned Phase 2 additions: coverage reports & multi‑browser matrix (Firefox).
 
 ## 🧭 Fallback (Limited) Mode
 
-Displayed banner: “Limited mode: only albums exclusively containing your photos are listed.”  
+Displayed banner: “CPT: Limited mode enabled — only albums exclusively containing your photos are listed.”  
 This prevents users from editing collaborative albums when direct ownership metadata is missing.
 
 ---
