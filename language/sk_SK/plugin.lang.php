@@ -35,5 +35,11 @@ $lang['Works with Community plugin ownership or fallback detection'] = 'Funguje 
 $lang['CPT: Ownership column not detected; falling back to albums exclusively containing user photos.'] = 'CPT: Stlpec vlastnika nebol zisteny; pouzije sa nahradny rezim len pre albumy obsahujuce vyhradne vase fotografie.';
 $lang['CPT: Limited mode enabled — only albums exclusively containing your photos are listed.'] = 'Obmedzeny rezim: zobrazuju sa len albumy obsahujuce vyhradne vase fotografie.';
 $lang['You have no editable galleries yet.'] = 'Zatial nemate ziadne upravitelne galerie.';
+$lang['Cover image'] = 'Titulna fotografia';
+$lang['Choose cover image'] = 'Vybrat titulnu fotografiu';
+$lang['Clear cover image'] = 'Odstranit titulnu fotografiu';
+$lang['No cover image selected.'] = 'Nie je vybrata ziadna titulna fotografia.';
+$lang['Current cover image is unavailable.'] = 'Aktualna titulna fotografia nie je dostupna.';
+$lang['This gallery has no photos available for a cover image yet.'] = 'Tato galeria este nema ziadne fotografie vhodne pre titulnu fotografiu.';
 
 ?>

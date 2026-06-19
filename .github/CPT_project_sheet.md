@@ -12,9 +12,9 @@ Empower non-admin gallery owners by integrating album management controls direct
 
 Initial concept used an ARIA tabbed interface. During integration with varied themes (e.g. Bootstrap Darkroom) we simplified to a progressive enhancement that injects a single structured fieldset section ("My Galleries") into the existing profile form. This reduced fragility, avoided layout clashes, and preserved full functionality with JavaScript disabled (the section simply does not appear when no albums qualify).
 
-### `Status` (As of 2026-06-17)
+### `Status` (As of 2026-06-18)
 
-Phase 1 functionality is fully implemented and validated, and the first Phase 2 extension is now in place: album owners can share an album with a selected allow-list of users from the profile/UCP editor. The plugin now covers profile and UCP album editing, owner-only album privacy toggling on public and mobile album pages, current Community ownership schemas, album-level selected-user sharing, multilingual rollout for the active gallery languages, and a focused PHPUnit regression suite. Representative image selection remains deferred and is still the clearest next CPT feature.
+Phase 1 functionality is fully implemented and validated, the first Phase 2 extension is in place for album sharing with selected users, the inherited-ownership hardening phase is now implemented as Phase 1.5, and a representative-image MVP is now in place on top of that ownership foundation. The plugin now covers profile and UCP album editing, owner-only album privacy toggling on public and mobile album pages, current Community ownership schemas, inherited ownership for descendant albums below a Community-owned root, album-level selected-user sharing, representative image selection from album photos, multilingual rollout for the active gallery languages, and a focused PHPUnit regression suite.
 
 ### Implementation Summary
 
@@ -24,8 +24,11 @@ Delivered components & behaviors:
 2. **Profile Hook Integration** via `cpt_setup_ucp_tabs` (legacy name) attaching on `loc_begin_profile` to process POST then expose the enhancement.
 3. **Dual Ownership Model**:
    - Primary: `categories.community_user` on current Community installs, with legacy `categories.user_id` support retained.
-   - Fallback: exclusive contributor heuristic (all images in album uploaded by current user) when no supported ownership column exists.
-   - Hybrid behavior: if the ownership column exists but a specific album has `NULL` owner metadata, fallback still applies when the user is the exclusive contributor.
+
+- Inherited ownership: descendant albums under a directly owned root inherit the same effective owner unless a child album declares a different explicit owner.
+- Fallback: exclusive contributor heuristic (all images in album uploaded by current user) when no supported ownership column exists.
+- Hybrid behavior: if the ownership column exists but a specific album has `NULL` owner metadata, fallback still applies when the user is the exclusive contributor.
+
 4. **Album Data Handling**: Secure fetch of `id, name, comment, status`; early escape if zero qualifying albums (no intrusive markup).
 5. **Template Partial** (`ucp_album_manager.tpl`): Now a Bootstrap card layout with per‑album sub‑cards; fully escaped output; empty state message when no albums yet.
 6. **Progressive Enhancement Injection**: Server renders partial string → exported through inline JS → client script injects inside existing profile `<form>` (no nested forms) with accessibility preserved (`aria-label`).
@@ -39,12 +42,12 @@ Delivered components & behaviors:
 14. **Security**: Ownership re‑checked server-side for every album before write; only whitelisted columns updated; UCP visibility constrained to `public|private|shared` with selected users validated against real shareable accounts; album-page actions remain constrained to `public|private` and require a valid `pwg_token`.
 15. **Accessibility**: Semantic form controls, proper labels, grouped cards; removal of duplicate legends while retaining screen-reader context via `aria-label`.
 16. **Styling & Theme Compatibility**: Profile UI uses host theme styles; public and mobile toggle ships dedicated lightweight CSS and JS because Smart Pocket does not render the standard plugin content slot.
-17. **Testing**: Comprehensive PHPUnit suite covers logic, security, edge cases, privacy transitions, sharing permission sync, and ownership regressions. Final validated state: `OK (16 tests, 49 assertions)`.
-18. **CI**: GitHub Actions workflows for PHPUnit and Cypress integrated.
+17. **Representative Image MVP**: The UCP editor now exposes a hidden `representative_picture_id`, shows the current cover image when present, lazy-loads eligible album photos through `core_privacy_toggle.album.images`, and lets the owner set or clear the native Piwigo `categories.representative_picture_id` field.
+18. **Testing**: Comprehensive PHPUnit suite covers logic, security, edge cases, privacy transitions, sharing permission sync, inherited descendant ownership, explicit child-owner override, ownership regressions, and representative-image assignment and clearing.
+19. **CI**: GitHub Actions workflows for PHPUnit and Cypress integrated.
 
 ### Remaining (Deferred) Items
 
-- Representative image selection UI & persistence.
 - Rich E2E scenarios from `ucp_album_management.feature` (currently only smoke executed).
 - Optional owner-grouped public album browsing surface if we later decide to add a higher display level above individual user albums.
 - Multi-browser CI matrix and code coverage reporting.
@@ -58,7 +61,7 @@ Current implementation relies solely on native HTML form semantics:
 - Each album sub-card uses a `.card-header` as a visual group label; can be promoted to a semantic heading tag later without logic changes.
 - Labels are properly associated via `for`/`id`; no custom widgets means no additional ARIA roles.
 - Progressive enhancement: with JS disabled, server-side markup (and hidden marker) still allows editing; JS only relocates/stylizes content.
-- Future representative image selector must ensure full keyboard operability (arrow or Tab navigation, focus style, and screen reader announcement of selection state).
+- Representative image selection currently relies on native buttons plus a lazily injected thumbnail list; if the picker becomes denser later, add explicit keyboard traversal and stronger selection-state announcements.
 - Public/mobile album toggle intentionally stays native: standard form submit, explicit button label, no JavaScript-only dependency for the actual permission change.
 
 ### Security & Validation
@@ -93,25 +96,30 @@ Deferred / Not Unit-Tested Yet (future candidates):
 
 - Injection/integration path via `cpt_setup_ucp_tabs` (would require fuller template + POST environment simulation for end-to-end assurance – left to Cypress/E2E scope).
 - Mixed contributor edge cases where images added after initial exclusivity break fallback ownership (can be added if regression discovered).
-- Public/mobile album-page toggle flow is currently validated manually rather than through an automated browser scenario.
 - Theme-driven AJAX profile-save path is implemented and manually validated, but not yet covered by dedicated automated end-to-end tests.
 
 **Cypress / E2E**
 
-1. Owner sees "My Galleries" section (not tabs) when they have qualifying albums.
-2. Limited mode banner appears when using fallback heuristic.
-3. Editing name + description + privacy and submitting shows success notice and persists after reload.
-4. Private album hidden from another (non-owner) user after save.
-5. Album made public again becomes visible to other user.
-6. User with no qualifying albums sees no section.
-7. Theme-driven profile page can save CPT album changes through the `core_privacy_toggle.albums.update` webservice path.
-8. Album owner sees the public/mobile album-page privacy shortcut on their own album page.
-9. Album-page shortcut can switch an owned album from public to private and back again.
-10. Album owner can switch a managed album to `Shared with selected users` in the UCP editor and preserve access for the chosen users only.
+Current automated browser coverage in `_qa/cypress/cypress/e2e/smoke.cy.ts`:
+
+1. Inherited owner sees the album-page privacy shortcut on a descendant album.
+2. Inherited owner can switch a descendant album from public to private and back again from the album page.
+3. After a descendant album is made private, guest browsing no longer sees that child album under the public parent root; the test then restores the album to public.
+4. The profile/UCP manager lists the owned root plus descendant albums and exposes the representative-image controls.
+5. Parent ownership does not override an explicit different child owner when an override-seeded album is provided.
+6. The explicit child owner sees the album-page shortcut when override credentials are configured.
+7. Smart Pocket/mobile album pages render the injected CPT privacy shortcut when the mobile theme is enabled.
+
+Still desired in future Cypress coverage:
+
+1. Limited mode banner appears when using fallback heuristic.
+2. Theme-driven profile page can save CPT album changes through the `core_privacy_toggle.albums.update` webservice path.
+3. Album owner can switch a managed album to `Shared with selected users` in the UCP editor and preserve access for the chosen users only.
+4. Album owner can choose a representative image from the current album and clear it again through the live picker flow.
+5. User with no qualifying albums sees no section.
 
 ### Deferred / Out of Scope (for MVP)
 
-- Representative image selection UI.
 - Per-photo or per-group ACL redesign beyond album-level owner sharing.
 - Advanced pagination or search across large album sets.
 - Full ARIA tab widget (replaced by simpler section).
@@ -126,10 +134,160 @@ Deferred / Not Unit-Tested Yet (future candidates):
 
 ### Future Considerations
 
+- Introduce inherited ownership for Community user album trees so a user-owned root album can safely grant CPT management rights to descendant subalbums.
 - Introduce a migration routine to normalize ownership metadata if absent (opt-in) for installations that want first-class ownership.
-- Add representative image selection via thumbnail chooser with lazy loading.
+- Extend representative image selection with browser automation coverage, localization cleanup, and potentially a denser accessible picker if album sizes justify it.
 - Provide REST/WebService endpoints mirroring the profile functionality for SPA or mobile clients.
 - Consider a future owner-grouped album landing page if the gallery needs an upper display level above individual user albums.
+
+### CPT Extension: Inherited Ownership for Community User Album Trees (Implemented 2026-06-18)
+
+#### Scrum-XP Stage
+
+This section started as the planned next CPT iteration and is now the implemented ownership-hardening step delivered in Phase 1.5.
+
+#### `Action`
+
+Extend CPT ownership detection so a Community-owned user root album grants the same user CPT management rights over descendant subalbums inside that root album tree.
+
+#### Problem Statement
+
+Current Community user-album ownership is intentionally narrow: one user is associated with one album through `categories.community_user`. In a practical gallery structure, however, a user album often acts as a parent container:
+
+```text
+slecna1
+├── slecna1_album1
+├── slecna1_album2
+└── slecna1_album3
+```
+
+Only the directly Community-owned album is treated as first-class owned by CPT. Descendant albums may fail to show the public/mobile privacy shortcut or appear inconsistently in the UCP editor unless the fallback exclusive-contributor heuristic happens to pass.
+
+This is not primarily a Community plugin bug. It is a CPT ownership-model gap: CPT currently understands direct album ownership and exclusive upload fallback, but not inherited ownership from an owned parent album.
+
+#### Design Decision
+
+Do **not** fork or customize Community as the first solution. Keep Community as the source of the user's root album assignment, then extend CPT with a stricter derived ownership rule:
+
+1. A user owns an album directly when `categories.community_user` or legacy `categories.user_id` equals the current user id.
+2. A user owns a descendant album when one of the album's ancestors is directly owned by that user.
+3. The existing exclusive-contributor fallback remains available for albums with no explicit owner metadata, but inherited ownership should take priority when a supported ownership column exists.
+4. Server-side validation must continue to re-check effective ownership before every write.
+
+#### Expected User Behavior
+
+- If `slecna1` is assigned to user `slecna1` in the Community tab, CPT should allow that user to manage `slecna1` and its descendant albums.
+- The public/mobile album-page privacy shortcut should appear on owned descendants such as `slecna1_album2`, not only on the directly assigned root album.
+- The profile/UCP "My Galleries" section should list direct owned albums and inherited child albums, avoiding duplicates.
+- User `slecna1` must not gain control over albums outside the owned root tree.
+- If another user owns a nested subtree explicitly, that explicit child ownership should be respected and should stop ownership inheritance from the parent unless a deliberate future setting says otherwise.
+
+#### Implementation Notes
+
+1. **Effective ownership helpers added**
+
+- `cpt_get_album_effective_owner_id(int $album_id): ?int`
+- `cpt_get_album_direct_owner_id(int $album_id): ?int`
+- `cpt_get_album_ancestor_ids(int $album_id): array`
+- `cpt_album_is_descendant_of_owned_root(int $album_id, int $user_id): bool`
+
+2. **Ownership checks updated**
+
+- `cpt_album_is_owned_by()` now routes through a single rule resolver returning `direct`, `ancestor`, `exclusive_contributor`, or `denied`.
+- Explicit child ownership still blocks parent inheritance.
+
+3. **Album retrieval updated**
+
+- `cpt_fetch_albums_owned_by()` now returns direct albums, inherited descendants, and fallback-exclusive albums without duplicates.
+- Retrieval is sorted in tree order using ancestor path data instead of descending id only.
+
+4. **Permission synchronization updated**
+
+- Private/shared transitions on descendant albums now preserve admin plus the effective owner.
+
+5. **Public/mobile album shortcut updated**
+
+- Album-page toggle visibility and processing now rely on the same effective ownership rule as the UCP editor.
+
+6. **Diagnostics added**
+
+- Debug mode now reports which ownership rule authorized or denied an album update.
+
+7. **Documentation delivered**
+
+- README updated.
+- ADR added for the CPT-vs-Community ownership decision.
+- Dedicated inherited-ownership Gherkin feature file added.
+
+#### Accessibility Notes
+
+No major new widget is required for this extension. The main accessibility requirement is consistency:
+
+- Existing native form controls and labels remain unchanged.
+- The same UCP album cards should appear for inherited albums as for direct albums.
+- If an inherited ownership hint is shown later, it should be plain text associated with the album card, not an icon-only indicator.
+- Public/mobile album toggle remains a normal form with a real submit button.
+
+#### Security Rules
+
+- Effective ownership must be computed server-side only.
+- Never trust album ids submitted by the browser.
+- Explicit child ownership by another user should block parent inheritance.
+- A user may manage descendant album metadata and privacy only inside their effective owned tree.
+- Selected shared-user ids must continue to be validated against shareable accounts.
+- Permission sync must never remove owner or admin access for private/shared states.
+
+#### PHPUnit Test Plan
+
+Add or extend tests for the following cases:
+
+1. **Direct owner still works**
+   - Album with `community_user = user_id` is editable and toggle-visible.
+
+2. **Descendant inherited owner works**
+   - Parent/root album has `community_user = user_id`.
+   - Child album has no direct owner.
+   - CPT treats child as owned by the parent owner.
+
+3. **Nested descendant inherited owner works**
+   - Grandchild under owned root is editable.
+
+4. **Explicit child owner blocks inheritance**
+   - Parent is owned by user A.
+   - Child has `community_user = user B`.
+   - User A cannot edit child; user B can.
+
+5. **Unrelated album remains denied**
+   - Album outside the owned tree is not editable, even if the user owns another root.
+
+6. **Fallback still works**
+   - Album with no supported ownership column remains editable only when all images were uploaded by the current user.
+
+7. **Permission sync uses effective owner**
+   - Private transition on inherited child writes `user_access` rows for admin + effective owner.
+   - Shared transition on inherited child writes admin + effective owner + selected users.
+
+8. **Album retrieval includes inherited children**
+   - UCP fetch returns root and descendant albums with no duplicates.
+
+#### Cypress / E2E Acceptance Scenarios
+
+1. Given user `slecna1` owns root album `slecna1`, when they open descendant album `slecna1_album2`, then the CPT privacy shortcut is visible.
+2. Given user `slecna1` owns root album `slecna1`, when they open their profile/UCP, then `slecna1_album1`, `slecna1_album2`, and `slecna1_album3` are listed in "My Galleries".
+3. Given `slecna1_album2` is made private from the album page, when another non-shared user browses the gallery, then that album is no longer visible.
+4. Given a descendant album has an explicit different Community owner, when the parent owner visits that album, then the CPT privacy shortcut is not visible.
+
+#### Gherkin Coverage
+
+The dedicated feature file now exists at `.github/features/inherited_album_ownership.feature` and complements the broader `ucp_album_management.feature` scenarios.
+
+#### Definition of Done
+
+- PHPUnit suite passes with inherited ownership coverage.
+- Cypress scenario remains to be automated for album-page toggle visibility on descendant albums.
+- Manual test still recommended against the real `slecna1` album tree.
+- README and this project sheet are updated to describe inherited ownership.
+- ADR added for the Community-vs-CPT customization decision.
 
 ### Phase 2 Design Notes
 

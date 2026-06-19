@@ -36,5 +36,11 @@ $lang['Works with Community plugin ownership or fallback detection'] = 'Fonction
 $lang['CPT: Ownership column not detected; falling back to albums exclusively containing user photos.'] = 'Colonne propriétaire non détectée ; repli sur les galeries contenant exclusivement vos photos.';
 $lang['CPT: Limited mode enabled — only albums exclusively containing your photos are listed.'] = 'Mode limité : seules les galeries contenant exclusivement vos photos sont listées.';
 $lang['You have no editable galleries yet.'] = 'Vous n\'avez pas encore de galeries modifiables.';
+$lang['Cover image'] = 'Image de couverture';
+$lang['Choose cover image'] = 'Choisir l\'image de couverture';
+$lang['Clear cover image'] = 'Retirer l\'image de couverture';
+$lang['No cover image selected.'] = 'Aucune image de couverture selectionnee.';
+$lang['Current cover image is unavailable.'] = 'L\'image de couverture actuelle est indisponible.';
+$lang['This gallery has no photos available for a cover image yet.'] = 'Cette galerie n\'a pas encore de photos disponibles pour une image de couverture.';
 
 ?>

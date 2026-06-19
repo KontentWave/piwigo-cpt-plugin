@@ -148,7 +148,7 @@ function cpt_handle_album_page_toggle(): void
 
 	$current_status = cpt_get_album_status($album_id) ?? (string) ($category['status'] ?? 'public');
 	if ($current_status !== $target_status) {
-		cpt_update_album($album_id, array('status' => $target_status));
+		cpt_update_album($album_id, array('status' => $target_status), false, array(), $user_id);
 		$_SESSION['page_infos'][] = l10n('Album privacy updated.');
 	}
 
@@ -292,6 +292,26 @@ function cpt_count_albums_owned_by(int $user_id): int
 	return count(cpt_fetch_albums_owned_by($user_id));
 }
 
+function cpt_build_album_editor_row(array $row, int $owner_user_id): array
+{
+	$album_id = (int) $row['id'];
+	$shared_users = cpt_get_album_shared_user_ids($album_id, $owner_user_id);
+	$representative = cpt_get_album_representative_details($album_id);
+
+	return [
+		'id' => $album_id,
+		'name' => $row['name'],
+		'comment' => $row['comment'],
+		'status' => $row['status'],
+		'visibility' => cpt_get_album_visibility_mode($album_id, $owner_user_id),
+		'shared_users' => $shared_users,
+		'shared_user_lookup' => array_fill_keys($shared_users, true),
+		'representative_picture_id' => $representative['id'],
+		'representative_label' => $representative['label'],
+		'representative_src' => $representative['src'],
+	];
+}
+
 /**
  * Fetch basic album metadata for owner editing.
  */
@@ -301,39 +321,60 @@ function cpt_fetch_albums_owned_by(int $user_id): array
 	if ($ownership_column === null) { return []; }
 	$albums = [];
 	$album_ids = [];
-	$query = 'SELECT id, name, comment, status FROM '.CATEGORIES_TABLE.' WHERE '.$ownership_column.' = '.(int)$user_id.' ORDER BY id DESC';
+	$query = 'SELECT id, name, comment, status FROM '.CATEGORIES_TABLE.' ORDER BY id ASC';
 	$result = pwg_query($query);
 	if (!$result) { return $albums; }
 	while ($row = pwg_db_fetch_assoc($result)) {
 		$album_id = (int)$row['id'];
-		$shared_users = cpt_get_album_shared_user_ids($album_id, (int)$user_id);
-		$albums[] = [
-			'id' => $album_id,
-			'name' => $row['name'],
-			'comment' => $row['comment'],
-			'status' => $row['status'],
-			'visibility' => cpt_get_album_visibility_mode($album_id, (int)$user_id),
-			'shared_users' => $shared_users,
-			'shared_user_lookup' => array_fill_keys($shared_users, true),
-		];
-		$album_ids[$album_id] = true;
-	}
+		$effective_owner_id = cpt_get_album_effective_owner_id($album_id);
+		if ($effective_owner_id !== (int) $user_id) {
+			if ($effective_owner_id !== null || !cpt_album_has_exclusive_contributor($album_id, $user_id)) {
+				continue;
+			}
+			$effective_owner_id = (int) $user_id;
+		}
 
-	foreach (cpt_fetch_albums_contributed_exclusive($user_id) as $album) {
-		$album_id = (int) $album['id'];
 		if (isset($album_ids[$album_id])) {
 			continue;
 		}
 
-		if (cpt_get_album_explicit_owner_id($album_id) !== null) {
-			continue;
-		}
-
-		$albums[] = $album;
+		$albums[] = cpt_build_album_editor_row($row, $effective_owner_id);
 		$album_ids[$album_id] = true;
 	}
+	usort($albums, 'cpt_compare_album_tree_order');
 
 	return $albums;
+}
+
+function cpt_compare_album_tree_order(array $left, array $right): int
+{
+	$left_key = cpt_get_album_tree_sort_key((int) $left['id']);
+	$right_key = cpt_get_album_tree_sort_key((int) $right['id']);
+
+	if ($left_key === $right_key) {
+		return ((int) $left['id']) <=> ((int) $right['id']);
+	}
+
+	return strcmp($left_key, $right_key);
+}
+
+function cpt_get_album_tree_sort_key(int $album_id): string
+{
+	static $cache = [];
+
+	if (isset($cache[$album_id])) {
+		return $cache[$album_id];
+	}
+
+	$path = array_merge(cpt_get_album_ancestor_ids($album_id), array($album_id));
+	$cache[$album_id] = implode('.', array_map(
+		static function ($path_id): string {
+			return str_pad((string) (int) $path_id, 10, '0', STR_PAD_LEFT);
+		},
+		$path
+	));
+
+	return $cache[$album_id];
 }
 
 /**
@@ -374,19 +415,144 @@ function cpt_fetch_albums_contributed_exclusive(int $user_id): array
 	$res = pwg_query($sql);
 	if (!$res) { return $albums; }
 	while ($row = pwg_db_fetch_assoc($res)) {
-		$album_id = (int)$row['id'];
-		$shared_users = cpt_get_album_shared_user_ids($album_id, (int)$user_id);
-		$albums[] = [
-			'id' => $album_id,
-			'name' => $row['name'],
-			'comment' => $row['comment'],
-			'status' => $row['status'],
-			'visibility' => cpt_get_album_visibility_mode($album_id, (int)$user_id),
-			'shared_users' => $shared_users,
-			'shared_user_lookup' => array_fill_keys($shared_users, true),
-		];
+		$albums[] = cpt_build_album_editor_row($row, (int) $user_id);
 	}
 	return $albums;
+}
+
+function cpt_get_album_representative_picture_id(int $album_id): ?int
+{
+	$result = pwg_query('SELECT representative_picture_id FROM '.CATEGORIES_TABLE.' WHERE id='.(int) $album_id.' LIMIT 1');
+	if (!$result) {
+		return null;
+	}
+
+	$row = pwg_db_fetch_assoc($result);
+	if (!$row || !isset($row['representative_picture_id']) || $row['representative_picture_id'] === null || $row['representative_picture_id'] === '') {
+		return null;
+	}
+
+	return (int) $row['representative_picture_id'];
+}
+
+function cpt_get_album_representative_details(int $album_id): array
+{
+	$representative_id = cpt_get_album_representative_picture_id($album_id);
+	if ($representative_id === null) {
+		return [
+			'id' => null,
+			'label' => l10n('No cover image selected.'),
+			'src' => '',
+		];
+	}
+
+	$result = pwg_query('SELECT id, name, file, path, representative_ext FROM '.IMAGES_TABLE.' WHERE id='.(int) $representative_id.' LIMIT 1');
+	if (!$result) {
+		return [
+			'id' => $representative_id,
+			'label' => l10n('Current cover image is unavailable.'),
+			'src' => '',
+		];
+	}
+
+	$row = pwg_db_fetch_assoc($result);
+	if (!$row) {
+		return [
+			'id' => $representative_id,
+			'label' => l10n('Current cover image is unavailable.'),
+			'src' => '',
+		];
+	}
+
+	return [
+		'id' => (int) $row['id'],
+		'label' => cpt_get_album_image_label($row),
+		'src' => cpt_get_album_image_square_src($row),
+	];
+}
+
+function cpt_fetch_album_representative_options(int $album_id, int $user_id): array
+{
+	if (!cpt_album_is_owned_by($album_id, $user_id)) {
+		return [];
+	}
+
+	$options = [];
+	$result = pwg_query('SELECT i.id, i.name, i.file, i.path, i.representative_ext
+		FROM '.IMAGES_TABLE.' i
+		INNER JOIN '.IMAGE_CATEGORY_TABLE.' ic ON ic.image_id = i.id
+		WHERE ic.category_id = '.(int) $album_id.'
+		ORDER BY i.id ASC');
+	if (!$result) {
+		return $options;
+	}
+
+	while ($row = pwg_db_fetch_assoc($result)) {
+		$options[] = [
+			'id' => (int) $row['id'],
+			'label' => cpt_get_album_image_label($row),
+			'src' => cpt_get_album_image_square_src($row),
+		];
+	}
+
+	return $options;
+}
+
+function cpt_get_album_image_label(array $image): string
+{
+	$name = trim((string) ($image['name'] ?? ''));
+	$file = trim((string) ($image['file'] ?? ''));
+	if ($name !== '') {
+		return $file !== '' ? $name.' ('.$file.')' : $name;
+	}
+	if ($file !== '') {
+		return $file;
+	}
+	return '#'.(int) ($image['id'] ?? 0);
+}
+
+function cpt_get_album_image_square_src(array $image): string
+{
+	if (!class_exists('DerivativeImage') || !class_exists('ImageStdParams') || !defined('IMG_SQUARE')) {
+		return '';
+	}
+
+	try {
+		return (string) \DerivativeImage::url(\ImageStdParams::get_by_type(IMG_SQUARE), $image);
+	} catch (\Throwable $throwable) {
+		return '';
+	}
+}
+
+function cpt_update_album_representative(int $album_id, ?int $image_id, int $user_id): bool
+{
+	if (!cpt_album_is_owned_by($album_id, $user_id)) {
+		return false;
+	}
+
+	if ($image_id !== null) {
+		$membership = pwg_query('SELECT COUNT(*) AS cnt FROM '.IMAGE_CATEGORY_TABLE.' WHERE category_id='.(int) $album_id.' AND image_id='.(int) $image_id);
+		if (!$membership) {
+			return false;
+		}
+
+		$row = pwg_db_fetch_assoc($membership);
+		if ((int) ($row['cnt'] ?? 0) === 0) {
+			return false;
+		}
+	}
+
+	$value_sql = $image_id === null ? 'NULL' : (string) (int) $image_id;
+	$result = pwg_query('UPDATE '.CATEGORIES_TABLE.' SET representative_picture_id='.$value_sql.' WHERE id='.(int) $album_id.' LIMIT 1');
+	if (!$result) {
+		return false;
+	}
+
+	if (defined('USER_CACHE_CATEGORIES_TABLE')) {
+		pwg_query('UPDATE '.USER_CACHE_CATEGORIES_TABLE.' SET user_representative_picture_id = NULL WHERE cat_id='.(int) $album_id);
+	}
+
+	return true;
 }
 
 function cpt_get_shareable_user_options(int $owner_user_id): array
@@ -478,6 +644,15 @@ function cpt_add_ws_methods($arr): void
 {
 	$service = &$arr[0];
 	$service->addMethod(
+		'core_privacy_toggle.album.images',
+		'cpt_ws_get_album_images',
+		array(
+			'album_id' => array(),
+			'pwg_token' => array(),
+		),
+		'Load representative-image choices for one owned album.'
+	);
+	$service->addMethod(
 		'core_privacy_toggle.albums.update',
 		'cpt_ws_update_albums',
 		array(
@@ -486,6 +661,30 @@ function cpt_add_ws_methods($arr): void
 		),
 		'Update owned albums from AJAX-driven profile pages.'
 	);
+}
+
+function cpt_ws_get_album_images($params, &$service)
+{
+	global $user;
+
+	if (get_pwg_token() !== $params['pwg_token']) {
+		return new \PwgError(403, 'Invalid security token');
+	}
+
+	if (empty($user['id']) || is_a_guest()) {
+		return new \PwgError(401, 'Access denied');
+	}
+
+	$album_id = (int) ($params['album_id'] ?? 0);
+	if ($album_id <= 0 || !cpt_album_is_owned_by($album_id, (int) $user['id'])) {
+		return new \PwgError(403, 'Access denied');
+	}
+
+	return [
+		'album_id' => $album_id,
+		'current' => cpt_get_album_representative_details($album_id),
+		'images' => cpt_fetch_album_representative_options($album_id, (int) $user['id']),
+	];
 }
 
 /**
@@ -528,7 +727,7 @@ function cpt_handle_album_form(array $payload, int $user_id): bool
         $album_id = (int)$raw_id;
         if ($album_id <= 0) { continue; }
         $owns = cpt_album_is_owned_by($album_id, $user_id);
-	if ($debug_admin) { global $page; $page['infos'][] = '[CPT debug] album '.$album_id.' ownership check => '.($owns?'true':'false'); }
+		if ($debug_admin) { global $page; $page['infos'][] = '[CPT debug] album '.$album_id.' ownership rule => '.cpt_get_album_ownership_rule_for_user($album_id, $user_id); }
         if (!$owns) { continue; }
 
 		$updates = [];
@@ -541,6 +740,13 @@ function cpt_handle_album_form(array $payload, int $user_id): bool
             $comment = trim($fields['comment']);
             $updates['comment'] = pwg_db_real_escape_string($comment);
         }
+
+		$representative_requested = array_key_exists('representative_picture_id', $fields);
+		$representative_picture_id = null;
+		if ($representative_requested) {
+			$raw_representative = trim((string) ($fields['representative_picture_id'] ?? ''));
+			$representative_picture_id = $raw_representative === '' ? null : (int) $raw_representative;
+		}
 
 		$visibility = 'public';
 		if (isset($fields['visibility']) && in_array($fields['visibility'], array('public', 'private', 'shared'), true)) {
@@ -580,6 +786,10 @@ function cpt_handle_album_form(array $payload, int $user_id): bool
 			cpt_update_album($album_id, $updates, $debug_admin, $permission_options, $user_id);
             $updated_any = true;
         }
+
+		if ($representative_requested && cpt_update_album_representative($album_id, $representative_picture_id, $user_id)) {
+			$updated_any = true;
+		}
     }
     return $updated_any;
 }
@@ -589,19 +799,26 @@ function cpt_handle_album_form(array $payload, int $user_id): bool
  */
 function cpt_album_is_owned_by(int $album_id, int $user_id): bool
 {
-	$ownership_column = cpt_get_album_ownership_column();
-	if ($ownership_column !== null) {
-		$query = 'SELECT 1 FROM '.CATEGORIES_TABLE.' WHERE id='.(int)$album_id.' AND '.$ownership_column.'='.(int)$user_id.' LIMIT 1';
-		$result = pwg_query($query);
-		if ((bool) pwg_db_fetch_row($result)) {
-			return true;
-		}
+	return cpt_get_album_ownership_rule_for_user($album_id, $user_id) !== 'denied';
+}
 
-		$explicit_owner_id = cpt_get_album_explicit_owner_id($album_id);
-		if ($explicit_owner_id !== null) {
-			return false;
-		}
+function cpt_get_album_ownership_rule_for_user(int $album_id, int $user_id): string
+{
+	$direct_owner_id = cpt_get_album_direct_owner_id($album_id);
+	if ($direct_owner_id !== null) {
+		return $direct_owner_id === (int) $user_id ? 'direct' : 'denied';
 	}
+
+	$effective_owner_id = cpt_get_album_effective_owner_id($album_id);
+	if ($effective_owner_id !== null) {
+		return $effective_owner_id === (int) $user_id ? 'ancestor' : 'denied';
+	}
+
+	return cpt_album_has_exclusive_contributor($album_id, $user_id) ? 'exclusive_contributor' : 'denied';
+}
+
+function cpt_album_has_exclusive_contributor(int $album_id, int $user_id): bool
+{
 	$sql = 'SELECT COUNT(DISTINCT i.added_by) AS contribs, MIN(i.added_by) AS min_by
 		FROM '.IMAGE_CATEGORY_TABLE.' ic
 		INNER JOIN '.IMAGES_TABLE.' i ON i.id = ic.image_id
@@ -613,27 +830,136 @@ function cpt_album_is_owned_by(int $album_id, int $user_id): bool
 	return ((int)($row['contribs'] ?? 0) === 1 && (int)($row['min_by'] ?? -1) === (int)$user_id);
 }
 
-/**
- * Returns the explicit owner id when the ownership column exists and is set.
- */
-function cpt_get_album_explicit_owner_id(int $album_id): ?int
+function cpt_get_album_effective_owner_id(int $album_id): ?int
 {
+	$direct_owner_id = cpt_get_album_direct_owner_id($album_id);
+	if ($direct_owner_id !== null) {
+		return $direct_owner_id;
+	}
+
+	foreach (array_reverse(cpt_get_album_ancestor_ids($album_id)) as $ancestor_id) {
+		$ancestor_owner_id = cpt_get_album_direct_owner_id($ancestor_id);
+		if ($ancestor_owner_id !== null) {
+			return $ancestor_owner_id;
+		}
+	}
+
+	return null;
+}
+
+function cpt_get_album_direct_owner_id(int $album_id): ?int
+{
+	static $cache = [];
+
+	if (array_key_exists($album_id, $cache)) {
+		return $cache[$album_id];
+	}
+
 	$ownership_column = cpt_get_album_ownership_column();
 	if ($ownership_column === null) {
+		$cache[$album_id] = null;
 		return null;
 	}
 
 	$res = pwg_query('SELECT '.$ownership_column.' AS owner_id FROM '.CATEGORIES_TABLE.' WHERE id='.(int) $album_id.' LIMIT 1');
 	if (!$res) {
+		$cache[$album_id] = null;
 		return null;
 	}
 
 	$row = pwg_db_fetch_assoc($res);
 	if (!$row || !isset($row['owner_id']) || $row['owner_id'] === null || $row['owner_id'] === '') {
+		$cache[$album_id] = null;
 		return null;
 	}
 
-	return (int) $row['owner_id'];
+	$cache[$album_id] = (int) $row['owner_id'];
+	return $cache[$album_id];
+}
+
+function cpt_get_album_ancestor_ids(int $album_id): array
+{
+	static $cache = [];
+
+	if (isset($cache[$album_id])) {
+		return $cache[$album_id];
+	}
+
+	$result = pwg_query('SELECT uppercats, id_uppercat FROM '.CATEGORIES_TABLE.' WHERE id='.(int) $album_id.' LIMIT 1');
+	if ($result) {
+		$row = pwg_db_fetch_assoc($result);
+		if (!empty($row['uppercats'])) {
+			$path_ids = array_values(array_filter(array_map('intval', explode(',', (string) $row['uppercats']))));
+			if (!empty($path_ids) && end($path_ids) === $album_id) {
+				array_pop($path_ids);
+			}
+			$cache[$album_id] = $path_ids;
+			return $cache[$album_id];
+		}
+
+		if (isset($row['id_uppercat']) && $row['id_uppercat'] !== null && $row['id_uppercat'] !== '') {
+			$ancestors = [];
+			$current_parent_id = (int) $row['id_uppercat'];
+			while ($current_parent_id > 0) {
+				array_unshift($ancestors, $current_parent_id);
+				$current_parent_id = cpt_get_album_parent_id($current_parent_id) ?? 0;
+			}
+			$cache[$album_id] = $ancestors;
+			return $cache[$album_id];
+		}
+	}
+
+	$cache[$album_id] = [];
+	return $cache[$album_id];
+}
+
+function cpt_get_album_parent_id(int $album_id): ?int
+{
+	static $cache = [];
+
+	if (array_key_exists($album_id, $cache)) {
+		return $cache[$album_id];
+	}
+
+	$result = pwg_query('SELECT id_uppercat FROM '.CATEGORIES_TABLE.' WHERE id='.(int) $album_id.' LIMIT 1');
+	if (!$result) {
+		$cache[$album_id] = null;
+		return null;
+	}
+
+	$row = pwg_db_fetch_assoc($result);
+	if (!$row || !isset($row['id_uppercat']) || $row['id_uppercat'] === null || $row['id_uppercat'] === '') {
+		$cache[$album_id] = null;
+		return null;
+	}
+
+	$cache[$album_id] = (int) $row['id_uppercat'];
+	return $cache[$album_id];
+}
+
+function cpt_album_is_descendant_of_owned_root(int $album_id, int $user_id): bool
+{
+	$direct_owner_id = cpt_get_album_direct_owner_id($album_id);
+	if ($direct_owner_id !== null) {
+		return false;
+	}
+
+	foreach (array_reverse(cpt_get_album_ancestor_ids($album_id)) as $ancestor_id) {
+		$ancestor_owner_id = cpt_get_album_direct_owner_id($ancestor_id);
+		if ($ancestor_owner_id !== null) {
+			return $ancestor_owner_id === (int) $user_id;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * Returns the explicit owner id when the ownership column exists and is set.
+ */
+function cpt_get_album_explicit_owner_id(int $album_id): ?int
+{
+	return cpt_get_album_direct_owner_id($album_id);
 }
 
 /**
@@ -674,12 +1000,9 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false, array
 				// Remove any existing explicit permissions first to avoid duplication
 				pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int)$album_id);
 				// Grant album owner + admin (user_id=1) access
-				// Need owner id: try the detected ownership column first, else attempt fallback detection via first image added_by
 				$owner_id = $owner_user_id;
-				$ownership_column = cpt_get_album_ownership_column();
-				if ($owner_id === null && $ownership_column !== null) {
-					$resO = pwg_query('SELECT '.$ownership_column.' AS owner_id FROM '.CATEGORIES_TABLE.' WHERE id='.(int)$album_id.' LIMIT 1');
-					if ($resO) { $rowO = pwg_db_fetch_assoc($resO); $owner_id = isset($rowO['owner_id']) ? (int)$rowO['owner_id'] : null; }
+				if ($owner_id === null) {
+					$owner_id = cpt_get_album_effective_owner_id($album_id);
 				}
 				if ($owner_id === null) {
 					$resImg = pwg_query('SELECT i.added_by FROM '.IMAGE_CATEGORY_TABLE.' ic INNER JOIN '.IMAGES_TABLE.' i ON i.id=ic.image_id WHERE ic.category_id='.(int)$album_id.' ORDER BY i.id ASC LIMIT 1');

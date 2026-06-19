@@ -50,6 +50,26 @@
                   {/if}
                 </div>
               </div>
+              <div class="form-group row mb-1 cpt-cover-image-group">
+                <label class="col-12 col-md-3 col-form-label" for="cpt-representative-picture-{$ALBUM.id|escape}">{'Cover image'|@translate}</label>
+                <div class="col-12 col-md-7">
+                  <input type="hidden" class="cpt-representative-input" id="cpt-representative-picture-{$ALBUM.id|escape}" name="cpt_album[{$ALBUM.id|escape}][representative_picture_id]" value="{$ALBUM.representative_picture_id|default:''|escape}" />
+                  <div class="cpt-representative-current d-flex align-items-center gap-2 mb-2" data-empty-label="{'No cover image selected.'|@translate|escape}" data-missing-label="{'Current cover image is unavailable.'|@translate|escape}">
+                    {if !empty($ALBUM.representative_src)}
+                      <img src="{$ALBUM.representative_src|escape}" alt="{$ALBUM.representative_label|escape}" class="cpt-representative-thumb" loading="lazy" />
+                    {/if}
+                    <span class="cpt-representative-label">{$ALBUM.representative_label|default:{'No cover image selected.'|@translate}|escape}</span>
+                  </div>
+                  <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm cpt-load-representatives">{'Choose cover image'|@translate}</button>
+                    <button type="button" class="btn btn-link btn-sm cpt-clear-representative" {if empty($ALBUM.representative_picture_id)}hidden{/if}>{'Clear cover image'|@translate}</button>
+                  </div>
+                  <div class="cpt-representative-picker" hidden>
+                    <div class="cpt-representative-options row g-2"></div>
+                    <p class="cpt-representative-empty text-muted small mb-0" hidden>{'This gallery has no photos available for a cover image yet.'|@translate}</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         {/foreach}

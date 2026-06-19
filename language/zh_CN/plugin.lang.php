@@ -27,5 +27,11 @@ $lang['Works with Community plugin ownership or fallback detection'] = '支持 C
 $lang['CPT: Ownership column not detected; falling back to albums exclusively containing user photos.'] = 'CPT：未检测到所有者列；将回退为仅显示只包含您照片的相册。';
 $lang['CPT: Limited mode enabled — only albums exclusively containing your photos are listed.'] = '受限模式：仅显示只包含您照片的相册。';
 $lang['You have no editable galleries yet.'] = '您还没有可编辑的相册。';
+$lang['Cover image'] = '封面图片';
+$lang['Choose cover image'] = '选择封面图片';
+$lang['Clear cover image'] = '清除封面图片';
+$lang['No cover image selected.'] = '尚未选择封面图片。';
+$lang['Current cover image is unavailable.'] = '当前封面图片不可用。';
+$lang['This gallery has no photos available for a cover image yet.'] = '此相册中还没有可用作封面的照片。';
 
 ?>

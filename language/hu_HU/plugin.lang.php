@@ -27,5 +27,11 @@ $lang['Works with Community plugin ownership or fallback detection'] = 'Mukodik 
 $lang['CPT: Ownership column not detected; falling back to albums exclusively containing user photos.'] = 'CPT: A tulajdonosi oszlop nem talalhato; tartalek mod lesz hasznalva csak a kizarolag a te fotoidat tartalmazo albumokhoz.';
 $lang['CPT: Limited mode enabled — only albums exclusively containing your photos are listed.'] = 'Korlatozott mod: csak a kizarolag a te fotoidat tartalmazo albumok jelennek meg.';
 $lang['You have no editable galleries yet.'] = 'Meg nincsenek szerkesztheto galeriaid.';
+$lang['Cover image'] = 'Borítókép';
+$lang['Choose cover image'] = 'Borítókép kiválasztása';
+$lang['Clear cover image'] = 'Borítókép eltávolítása';
+$lang['No cover image selected.'] = 'Nincs kiválasztott borítókép.';
+$lang['Current cover image is unavailable.'] = 'A jelenlegi borítókép nem érhető el.';
+$lang['This gallery has no photos available for a cover image yet.'] = 'Ehhez a galériához még nincs elérhető fotó borítóképként.';
 
 ?>

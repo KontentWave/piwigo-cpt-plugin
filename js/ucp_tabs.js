@@ -13,6 +13,15 @@
       "cpt-status alert " + (isError ? "alert-danger" : "alert-success");
   }
 
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   function collectAlbumPayload(root) {
     var albums = root.querySelectorAll(".cpt-album[data-album-id]");
     var payload = {};
@@ -41,6 +50,13 @@
         comment: commentField ? commentField.value : "",
         visibility: visibilityField ? visibilityField.value : "public",
       };
+
+      var representativeField = album.querySelector(
+        'input[name="cpt_album[' + albumId + '][representative_picture_id]"]',
+      );
+      if (representativeField) {
+        payload[albumId].representative_picture_id = representativeField.value;
+      }
 
       if (sharedUsersField && payload[albumId].visibility === "shared") {
         payload[albumId].shared_users = Array.prototype.slice
@@ -79,6 +95,128 @@
     }
   }
 
+  function renderRepresentativeOptions(album, images) {
+    var optionsRoot = album.querySelector(".cpt-representative-options");
+    var emptyMessage = album.querySelector(".cpt-representative-empty");
+    if (!optionsRoot || !emptyMessage) {
+      return;
+    }
+
+    optionsRoot.innerHTML = "";
+    emptyMessage.hidden = images.length > 0;
+
+    images.forEach(function (image) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className =
+        "btn btn-light btn-sm text-start cpt-representative-option";
+      button.setAttribute("data-image-id", String(image.id));
+      button.setAttribute("data-image-label", image.label || "");
+      button.setAttribute("data-image-src", image.src || "");
+      button.innerHTML =
+        '<span class="d-flex align-items-center gap-2">' +
+        (image.src
+          ? '<img src="' +
+            escapeHtml(image.src) +
+            '" alt="' +
+            escapeHtml(image.label || "") +
+            '" class="cpt-representative-thumb" loading="lazy" />'
+          : "") +
+        '<span class="cpt-representative-option-label">' +
+        escapeHtml(image.label || "") +
+        "</span></span>";
+
+      var col = document.createElement("div");
+      col.className = "col-12 col-sm-6 col-lg-4";
+      col.appendChild(button);
+      optionsRoot.appendChild(col);
+    });
+  }
+
+  function updateRepresentativeSelection(album, imageId, label, src) {
+    var input = album.querySelector(".cpt-representative-input");
+    var current = album.querySelector(".cpt-representative-current");
+    var currentLabel = current
+      ? current.querySelector(".cpt-representative-label")
+      : null;
+    var clearButton = album.querySelector(".cpt-clear-representative");
+    if (!input || !current || !currentLabel) {
+      return;
+    }
+
+    input.value = imageId ? String(imageId) : "";
+    currentLabel.textContent =
+      label || current.getAttribute("data-empty-label") || "";
+
+    var thumb = current.querySelector("img");
+    if (src) {
+      if (!thumb) {
+        thumb = document.createElement("img");
+        thumb.className = "cpt-representative-thumb";
+        thumb.loading = "lazy";
+        current.insertBefore(thumb, current.firstChild);
+      }
+      thumb.src = src;
+      thumb.alt = label || "";
+    } else if (thumb) {
+      thumb.remove();
+    }
+
+    if (clearButton) {
+      clearButton.hidden = !imageId;
+    }
+  }
+
+  function loadRepresentativeOptions(album, token) {
+    var picker = album.querySelector(".cpt-representative-picker");
+    if (!picker) {
+      return;
+    }
+
+    if (album.getAttribute("data-representatives-loaded") === "1") {
+      picker.hidden = !picker.hidden;
+      return;
+    }
+
+    var albumId = album.getAttribute("data-album-id");
+    if (!albumId) {
+      return;
+    }
+
+    var params = new URLSearchParams();
+    params.set("method", "core_privacy_toggle.album.images");
+    params.set("format", "json");
+    params.set("album_id", albumId);
+    params.set("pwg_token", token);
+
+    fetch("ws.php?" + params.toString(), {
+      method: "GET",
+      credentials: "same-origin",
+    })
+      .then(function (response) {
+        return response.json();
+      })
+      .then(function (data) {
+        if (!data || data.stat !== "ok") {
+          throw new Error("load_failed");
+        }
+
+        renderRepresentativeOptions(album, data.result.images || []);
+        album.setAttribute("data-representatives-loaded", "1");
+        picker.hidden = false;
+      })
+      .catch(function () {
+        var manager = album.closest(".cpt-album-manager");
+        if (manager) {
+          setStatusMessage(
+            manager,
+            window.CPT_I18N_SAVE_ERROR || "An error has occurred.",
+            true,
+          );
+        }
+      });
+  }
+
   function updateAlbumHeaders(root, payload) {
     Object.keys(payload).forEach(function (albumId) {
       var header = root.querySelector(
@@ -93,6 +231,53 @@
   }
 
   document.addEventListener("click", function (event) {
+    var representativeButton = event.target.closest(
+      ".cpt-load-representatives",
+    );
+    if (representativeButton) {
+      var representativeAlbum = representativeButton.closest(
+        ".cpt-album[data-album-id]",
+      );
+      var tokenInput = document.getElementById("pwg_token");
+      if (representativeAlbum && tokenInput && tokenInput.value) {
+        loadRepresentativeOptions(representativeAlbum, tokenInput.value);
+      }
+      return;
+    }
+
+    var representativeOption = event.target.closest(
+      ".cpt-representative-option",
+    );
+    if (representativeOption) {
+      var optionAlbum = representativeOption.closest(
+        ".cpt-album[data-album-id]",
+      );
+      if (optionAlbum) {
+        updateRepresentativeSelection(
+          optionAlbum,
+          representativeOption.getAttribute("data-image-id"),
+          representativeOption.getAttribute("data-image-label"),
+          representativeOption.getAttribute("data-image-src"),
+        );
+      }
+      return;
+    }
+
+    var clearRepresentative = event.target.closest(".cpt-clear-representative");
+    if (clearRepresentative) {
+      var clearAlbum = clearRepresentative.closest(".cpt-album[data-album-id]");
+      if (clearAlbum) {
+        var current = clearAlbum.querySelector(".cpt-representative-current");
+        updateRepresentativeSelection(
+          clearAlbum,
+          "",
+          current ? current.getAttribute("data-empty-label") : "",
+          "",
+        );
+      }
+      return;
+    }
+
     var button = event.target.closest(".cpt-save-button");
     if (!button) {
       return;

@@ -27,5 +27,11 @@ $lang['Works with Community plugin ownership or fallback detection'] = 'Прац
 $lang['CPT: Ownership column not detected; falling back to albums exclusively containing user photos.'] = 'CPT: Стовпець власника не виявлено; буде використано резервний режим лише для альбомів, що містять виключно ваші фотографії.';
 $lang['CPT: Limited mode enabled — only albums exclusively containing your photos are listed.'] = 'Обмежений режим: показано лише альбоми, що містять виключно ваші фотографії.';
 $lang['You have no editable galleries yet.'] = 'У вас поки що немає галерей, доступних для редагування.';
+$lang['Cover image'] = 'Обкладинка альбому';
+$lang['Choose cover image'] = 'Вибрати обкладинку';
+$lang['Clear cover image'] = 'Прибрати обкладинку';
+$lang['No cover image selected.'] = 'Обкладинку не вибрано.';
+$lang['Current cover image is unavailable.'] = 'Поточна обкладинка недоступна.';
+$lang['This gallery has no photos available for a cover image yet.'] = 'У цій галереї ще немає фотографій, доступних для обкладинки.';
 
 ?>
