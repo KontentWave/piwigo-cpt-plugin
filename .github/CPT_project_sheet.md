@@ -12,9 +12,9 @@ Empower non-admin gallery owners by integrating album management controls direct
 
 Initial concept used an ARIA tabbed interface. During integration with varied themes (e.g. Bootstrap Darkroom) we simplified to a progressive enhancement that injects a single structured fieldset section ("My Galleries") into the existing profile form. This reduced fragility, avoided layout clashes, and preserved full functionality with JavaScript disabled (the section simply does not appear when no albums qualify).
 
-### `Status` (As of 2026-06-18)
+### `Status` (As of 2026-06-19)
 
-Phase 1 functionality is fully implemented and validated, the first Phase 2 extension is in place for album sharing with selected users, the inherited-ownership hardening phase is now implemented as Phase 1.5, and a representative-image MVP is now in place on top of that ownership foundation. The plugin now covers profile and UCP album editing, owner-only album privacy toggling on public and mobile album pages, current Community ownership schemas, inherited ownership for descendant albums below a Community-owned root, album-level selected-user sharing, representative image selection from album photos, multilingual rollout for the active gallery languages, and a focused PHPUnit regression suite.
+Phase 1 functionality is fully implemented and validated, the first Phase 2 extension is in place for album sharing with selected users, the inherited-ownership hardening phase is now implemented as Phase 1.5, and a representative-image MVP is now in place on top of that ownership foundation. The plugin now covers profile and UCP album editing, owner-only album privacy toggling on public and mobile album pages, current Community ownership schemas, inherited ownership for descendant albums below a Community-owned root, album-level selected-user sharing, representative image selection from album photos, multilingual rollout for the active gallery languages, a local Community upload-target restriction patch for user-album trees, and a focused PHPUnit plus Cypress regression suite.
 
 ### Implementation Summary
 
@@ -43,8 +43,9 @@ Delivered components & behaviors:
 15. **Accessibility**: Semantic form controls, proper labels, grouped cards; removal of duplicate legends while retaining screen-reader context via `aria-label`.
 16. **Styling & Theme Compatibility**: Profile UI uses host theme styles; public and mobile toggle ships dedicated lightweight CSS and JS because Smart Pocket does not render the standard plugin content slot.
 17. **Representative Image MVP**: The UCP editor now exposes a hidden `representative_picture_id`, shows the current cover image when present, lazy-loads eligible album photos through `core_privacy_toggle.album.images`, and lets the owner set or clear the native Piwigo `categories.representative_picture_id` field.
-18. **Testing**: Comprehensive PHPUnit suite covers logic, security, edge cases, privacy transitions, sharing permission sync, inherited descendant ownership, explicit child-owner override, ownership regressions, and representative-image assignment and clearing.
-19. **CI**: GitHub Actions workflows for PHPUnit and Cypress integrated.
+18. **Community Upload Target Restriction (Local Integration Patch)**: The local Community runtime now clamps non-admin user-album upload and create scopes to the current user's own album tree, so `/add_photos` offers only that user's root and descendants instead of unrelated user roots.
+19. **Testing**: Comprehensive PHPUnit suite covers logic, security, edge cases, privacy transitions, sharing permission sync, inherited descendant ownership, explicit child-owner override, ownership regressions, and representative-image assignment and clearing.
+20. **CI**: GitHub Actions workflows for PHPUnit and Cypress integrated.
 
 ### Remaining (Deferred) Items
 
@@ -104,11 +105,12 @@ Current automated browser coverage in `_qa/cypress/cypress/e2e/smoke.cy.ts`:
 
 1. Inherited owner sees the album-page privacy shortcut on a descendant album.
 2. Inherited owner can switch a descendant album from public to private and back again from the album page.
-3. After a descendant album is made private, guest browsing no longer sees that child album under the public parent root; the test then restores the album to public.
+3. After a descendant album is made private, guest access to that descendant is blocked and redirected to identification; the test then restores the album to public.
 4. The profile/UCP manager lists the owned root plus descendant albums and exposes the representative-image controls.
-5. Parent ownership does not override an explicit different child owner when an override-seeded album is provided.
-6. The explicit child owner sees the album-page shortcut when override credentials are configured.
-7. Smart Pocket/mobile album pages render the injected CPT privacy shortcut when the mobile theme is enabled.
+5. The Community add-photos page offers upload targets only from the logged-in owner's own album tree.
+6. Parent ownership does not override an explicit different child owner when an override-seeded album is provided.
+7. The explicit child owner sees the album-page shortcut when override credentials are configured.
+8. Smart Pocket/mobile album pages render the injected CPT privacy shortcut when the mobile theme is enabled.
 
 Still desired in future Cypress coverage:
 
@@ -131,6 +133,7 @@ Still desired in future Cypress coverage:
 - Clearing template cache or hard-refresh may be needed after deploying updated JS or template partials.
 - Smart Pocket support depends on JS insertion because that theme does not render `PLUGIN_INDEX_CONTENT_BEGIN` on album pages.
 - Browser automation coverage should include at least one Smart Pocket/mobile pass because album-page toggle rendering depends on a JS insertion shim rather than the standard plugin slot.
+- A small local Community patch currently complements CPT by restricting `/add_photos` upload targets to the current user-album tree; because Community does not have its own tracked repo in this workspace, that integration note is documented here.
 
 ### Future Considerations
 

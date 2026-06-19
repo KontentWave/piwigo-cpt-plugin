@@ -1,0 +1,49 @@
+.cpt-album-manager .cpt-album .form-group {
+  clear: both;
+}
+
+.cpt-album-manager .cpt-shared-users-group,
+.cpt-album-manager .cpt-cover-image-group {
+  align-items: flex-start;
+}
+
+.cpt-album-manager .cpt-shared-users-group .col-12,
+.cpt-album-manager .cpt-cover-image-group .col-12 {
+  max-width: 100%;
+}
+
+.cpt-album-manager .cpt-shared-users-select {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-height: 8rem;
+}
+
+.cpt-album-manager .cpt-shared-users-group .form-text,
+.cpt-album-manager .cpt-shared-users-group p.form-text {
+  display: block;
+  margin-top: 0.5rem;
+  margin-left: 0;
+}
+
+.cpt-album-manager .cpt-save-actions {
+  clear: both;
+}
+
+@media (max-width: 768px) {
+  .cpt-album-manager .card-body {
+    padding-bottom: 5.5rem;
+  }
+
+  .cpt-album-manager .cpt-save-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    padding: 0.75rem 0 calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+    background: inherit;
+  }
+
+  .cpt-album-manager .cpt-save-button {
+    width: 100%;
+  }
+}

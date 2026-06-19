@@ -74,7 +74,7 @@
           </div>
         {/foreach}
 
-        <div class="text-right mt-3">
+        <div class="text-right mt-3 cpt-save-actions">
           <button type="button" class="btn btn-primary cpt-save-button">{'Save Changes'|@translate}</button>
         </div>
       {else}

@@ -8,7 +8,7 @@ To empower Piwigo gallery owners by seamlessly integrating powerful album manage
 
 Phase 1 is now delivered in practice: profile and UCP album editing is live, album privacy can also be toggled from public and mobile album pages, current Community ownership metadata is supported, album-level selected-user sharing is implemented in the UCP, and the plugin has working translations for the active gallery languages.
 
-A real-world Community limitation has now been addressed in CPT: Community may model "user albums" as one direct album per user, while galleries often use one user root album with several child albums. CPT now adds an inherited-ownership layer so child albums under a Community-owned root album can be managed by the same owner. With that stabilization step in place, the roadmap can move deeper into photo-level features.
+A real-world Community limitation has now been addressed in CPT: Community may model "user albums" as one direct album per user, while galleries often use one user root album with several child albums. CPT now adds an inherited-ownership layer so child albums under a Community-owned root album can be managed by the same owner. A small local Community integration patch also now restricts the add-photos target selector to that same owner tree. With those stabilization steps in place, the roadmap can move deeper into photo-level features.
 
 ### Phase 1 (MVP): UCP Album Management Basics
 
@@ -35,7 +35,7 @@ This phase hardens CPT against the practical Community plugin limitation where a
 - **Feature: UCP Child Album Listing:** Show owned descendant albums in the `My Galleries` UCP manager even when the child album has no direct `community_user` value.
 - **Feature: Public Album Shortcut for Descendants:** Show the owner-only public/mobile privacy shortcut on descendant albums.
 - **Feature: Permission Sync With Effective Owner:** When a descendant album is made private or shared, preserve access for admin, the effective owner, and selected shared users.
-- **Feature: Regression Protection:** PHPUnit coverage now protects direct ownership, inherited ownership, explicit child-owner override, and exclusive-contributor fallback. Cypress/BDD automation remains to be completed.
+- **Feature: Regression Protection:** PHPUnit coverage now protects direct ownership, inherited ownership, explicit child-owner override, and exclusive-contributor fallback. Cypress smoke coverage now also protects descendant toggle flows, Smart Pocket rendering, explicit child-owner override, representative-image controls, and Community upload-target scoping.
 
 Implementation direction:
 

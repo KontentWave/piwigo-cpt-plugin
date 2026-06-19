@@ -617,6 +617,10 @@ function cpt_inject_album_manager_assets(string $html_partial): void
 	$save_error = json_encode(l10n('An error has occurred.'), JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT);
 	$inline = 'window.CPT_ALBUM_HTML = '.$json.';window.CPT_I18N_MY_GALLERIES='.$legend.';window.CPT_I18N_SAVE_SUCCESS='.$save_success.';window.CPT_I18N_SAVE_ERROR='.$save_error.';window.CPT_ASSETS_READY=1;';
 
+	$css_path = CORE_PRIVACY_TOGGLE_PATH.'template/ucp_album_manager.css';
+	$css_url = CORE_PRIVACY_TOGGLE_PUBLIC.'template/ucp_album_manager.css';
+	$css_ver = '';
+	if (file_exists($css_path)) { $css_ver = '?v='.filemtime($css_path); }
 	$path = CORE_PRIVACY_TOGGLE_PATH.'js/ucp_tabs.js';
 	$url = CORE_PRIVACY_TOGGLE_PUBLIC.'js/ucp_tabs.js';
 	$ver = '';
@@ -625,6 +629,9 @@ function cpt_inject_album_manager_assets(string $html_partial): void
 	global $template;
 		if (method_exists($template, 'append')) {
 			// Head injection
+			if (file_exists($css_path)) {
+				$template->append('head_elements', '<link rel="stylesheet" href="'.htmlspecialchars($css_url.$css_ver, ENT_QUOTES).'">');
+			}
 			$template->append('head_elements', '<script>'.$inline.'</script>');
 			if (file_exists($path)) {
 				$template->append('head_elements', '<script src="'.htmlspecialchars($url.$ver, ENT_QUOTES).'"></script>');
