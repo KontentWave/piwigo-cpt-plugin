@@ -8,7 +8,7 @@ To empower Piwigo gallery owners by seamlessly integrating powerful album manage
 
 Phase 1 is now delivered in practice: profile and UCP album editing is live, album privacy can also be toggled from public and mobile album pages, current Community ownership metadata is supported, album-level selected-user sharing is implemented in the UCP, and the plugin has working translations for the active gallery languages.
 
-A real-world Community limitation has now been addressed in CPT: Community may model "user albums" as one direct album per user, while galleries often use one user root album with several child albums. CPT now adds an inherited-ownership layer so child albums under a Community-owned root album can be managed by the same owner. A small local Community integration patch also now restricts the add-photos target selector to that same owner tree. With those stabilization steps in place, the roadmap can move deeper into photo-level features.
+A real-world Community limitation has now been addressed in CPT: Community may model "user albums" as one direct album per user, while galleries often use one user root album with several child albums. CPT now adds an inherited-ownership layer so child albums under a Community-owned root album can be managed by the same owner. Small local Community integration patches also now restrict the add-photos target selector to that same owner tree and hide the bulk photo privacy-level action in favor of album-level sharing. With those stabilization steps in place, the roadmap can move deeper into photo-level features.
 
 ### Phase 1 (MVP): UCP Album Management Basics
 
@@ -57,7 +57,7 @@ Once the MVP is established, the next logical step is to allow basic photo manag
 Priority note:
 
 - The representative image chooser is now in place as the first Phase 2 slice; next work is broader browser automation and UI polish around that flow.
-- Photo privacy controls were explored on the Community side during integration work, but they are not yet a CPT-owned UCP feature.
+- Photo privacy controls were explored on the Community side during integration work, but they are not yet a CPT-owned UCP feature and the Community bulk photo privacy-level UI is intentionally hidden in this deployment.
 
 ### Phase 3: Advanced Features (Brainstorming)
 
