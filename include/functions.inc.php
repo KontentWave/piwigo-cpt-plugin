@@ -1,6 +1,8 @@
 <?php
 defined('CORE_PRIVACY_TOGGLE_PATH') or die('Hacking attempt!');
 
+require_once __DIR__.'/profile_fields.inc.php';
+
 if (!defined('CORE_PRIVACY_TOGGLE_PUBLIC')) {
 	define('CORE_PRIVACY_TOGGLE_PUBLIC', get_root_url().'plugins/'.basename(dirname(__DIR__)).'/');
 }
@@ -959,6 +961,229 @@ function cpt_album_is_descendant_of_owned_root(int $album_id, int $user_id): boo
 	}
 
 	return false;
+}
+
+function cpt_get_effective_owner_root_album_id_for_album(int $album_id): ?int
+{
+	$effective_owner_id = cpt_get_album_effective_owner_id($album_id);
+	if ($effective_owner_id === null) {
+		return null;
+	}
+
+	$path_ids = array_merge(cpt_get_album_ancestor_ids($album_id), [$album_id]);
+	foreach ($path_ids as $path_id) {
+		if (cpt_get_album_direct_owner_id((int) $path_id) === $effective_owner_id) {
+			return (int) $path_id;
+		}
+	}
+
+	return null;
+}
+
+function cpt_get_effective_owner_root_album_id_for_user(int $user_id): ?int
+{
+	$albums = cpt_fetch_albums_owned_by($user_id);
+	foreach ($albums as $album) {
+		$root_album_id = cpt_get_effective_owner_root_album_id_for_album((int) $album['id']);
+		if ($root_album_id !== null && cpt_get_album_direct_owner_id($root_album_id) === (int) $user_id) {
+			return $root_album_id;
+		}
+	}
+
+	return null;
+}
+
+function cpt_get_effective_owner_root_album_data(int $user_id): ?array
+{
+	$root_album_id = cpt_get_effective_owner_root_album_id_for_user($user_id);
+	if ($root_album_id === null) {
+		return null;
+	}
+
+	$result = pwg_query('SELECT id, name, comment, status FROM '.CATEGORIES_TABLE.' WHERE id='.(int) $root_album_id.' LIMIT 1');
+	if (!$result) {
+		return null;
+	}
+
+	$row = pwg_db_fetch_assoc($result);
+	return is_array($row) ? $row : null;
+}
+
+function cpt_fetch_owner_profile_rows(int $root_album_id, int $owner_user_id): array
+{
+	$rows = [];
+	$result = pwg_query('SELECT field_key, value_text, tag_id FROM '.CPT_OWNER_PROFILE_TABLE.' WHERE root_album_id='.(int) $root_album_id.' AND owner_user_id='.(int) $owner_user_id.' ORDER BY field_key ASC');
+	if (!$result) {
+		return $rows;
+	}
+
+	while ($row = pwg_db_fetch_assoc($result)) {
+		$field_key = (string) ($row['field_key'] ?? '');
+		if ($field_key === '') {
+			continue;
+		}
+		$rows[$field_key] = [
+			'field_key' => $field_key,
+			'value_text' => isset($row['value_text']) ? (string) $row['value_text'] : null,
+			'tag_id' => isset($row['tag_id']) && $row['tag_id'] !== null && $row['tag_id'] !== '' ? (int) $row['tag_id'] : null,
+		];
+	}
+
+	return $rows;
+}
+
+function cpt_normalize_owner_profile_text(string $field_key, string $value): string
+{
+	$definition = cpt_get_owner_profile_field_definition($field_key);
+	$normalized = trim($value);
+	$max_length = isset($definition['max_length']) ? (int) $definition['max_length'] : 255;
+	if ($max_length <= 0) {
+		return $normalized;
+	}
+
+	if (function_exists('mb_substr')) {
+		return mb_substr($normalized, 0, $max_length);
+	}
+
+	return substr($normalized, 0, $max_length);
+}
+
+function cpt_validate_owner_profile_field(string $field_key, array $field_payload): ?array
+{
+	$definition = cpt_get_owner_profile_field_definition($field_key);
+	if ($definition === null) {
+		return null;
+	}
+
+	if (($definition['type'] ?? 'text') === 'controlled') {
+		$tag_id = isset($field_payload['tag_id']) ? (int) $field_payload['tag_id'] : 0;
+		if ($tag_id <= 0) {
+			return ['delete' => true];
+		}
+
+		$options = cpt_get_owner_profile_controlled_options($field_key);
+		if (!isset($options[$tag_id])) {
+			return null;
+		}
+
+		return [
+			'delete' => false,
+			'tag_id' => $tag_id,
+			'value_text' => (string) $options[$tag_id],
+		];
+	}
+
+	$value = cpt_normalize_owner_profile_text($field_key, (string) ($field_payload['value_text'] ?? ''));
+	if ($value === '') {
+		return ['delete' => true];
+	}
+
+	return [
+		'delete' => false,
+		'tag_id' => null,
+		'value_text' => $value,
+	];
+}
+
+function cpt_validate_owner_profile_payload(array $payload, int $user_id): array
+{
+	$root_album_id = (int) ($payload['root_album_id'] ?? 0);
+	if ($root_album_id <= 0) {
+		return [];
+	}
+
+	if (cpt_get_effective_owner_root_album_id_for_album($root_album_id) !== $root_album_id) {
+		return [];
+	}
+
+	if (cpt_get_album_effective_owner_id($root_album_id) !== (int) $user_id) {
+		return [];
+	}
+
+	$fields_payload = $payload['fields'] ?? null;
+	if (!is_array($fields_payload)) {
+		return [];
+	}
+
+	$validated_fields = [];
+	foreach ($fields_payload as $field_key => $field_payload) {
+		if (!is_array($field_payload)) {
+			$field_payload = ['value_text' => (string) $field_payload];
+		}
+
+		$validated = cpt_validate_owner_profile_field((string) $field_key, $field_payload);
+		if ($validated === null) {
+			continue;
+		}
+
+		$validated_fields[(string) $field_key] = $validated;
+	}
+
+	return [
+		'root_album_id' => $root_album_id,
+		'owner_user_id' => (int) $user_id,
+		'fields' => $validated_fields,
+	];
+}
+
+function cpt_save_owner_profile(int $root_album_id, int $owner_user_id, array $fields): bool
+{
+	if ($root_album_id <= 0 || $owner_user_id <= 0 || empty($fields)) {
+		return false;
+	}
+
+	if (cpt_get_effective_owner_root_album_id_for_album($root_album_id) !== $root_album_id) {
+		return false;
+	}
+
+	if (cpt_get_album_effective_owner_id($root_album_id) !== (int) $owner_user_id) {
+		return false;
+	}
+
+	$updated_any = false;
+	foreach ($fields as $field_key => $field_data) {
+		if (cpt_get_owner_profile_field_definition((string) $field_key) === null) {
+			continue;
+		}
+
+		pwg_query("DELETE FROM ".CPT_OWNER_PROFILE_TABLE." WHERE root_album_id=".(int) $root_album_id." AND field_key='".pwg_db_real_escape_string((string) $field_key)."'");
+		$updated_any = true;
+
+		if (!empty($field_data['delete'])) {
+			continue;
+		}
+
+		$value_sql = isset($field_data['value_text']) && $field_data['value_text'] !== null
+			? "'".pwg_db_real_escape_string((string) $field_data['value_text'])."'"
+			: 'NULL';
+		$tag_sql = isset($field_data['tag_id']) && $field_data['tag_id'] !== null
+			? (string) (int) $field_data['tag_id']
+			: 'NULL';
+
+		$sql = sprintf(
+			"INSERT INTO %s (root_album_id, owner_user_id, field_key, value_text, tag_id, updated_at) VALUES (%d, %d, '%s', %s, %s, NOW())",
+			CPT_OWNER_PROFILE_TABLE,
+			(int) $root_album_id,
+			(int) $owner_user_id,
+			pwg_db_real_escape_string((string) $field_key),
+			$value_sql,
+			$tag_sql
+		);
+		$result = pwg_query($sql);
+		$updated_any = $updated_any || (bool) $result;
+	}
+
+	return $updated_any;
+}
+
+function cpt_update_owner_profile(array $payload, int $user_id): bool
+{
+	$validated = cpt_validate_owner_profile_payload($payload, $user_id);
+	if (empty($validated['fields']) || empty($validated['root_album_id']) || empty($validated['owner_user_id'])) {
+		return false;
+	}
+
+	return cpt_save_owner_profile((int) $validated['root_album_id'], (int) $validated['owner_user_id'], $validated['fields']);
 }
 
 /**

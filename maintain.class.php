@@ -21,7 +21,24 @@ class core_privacy_toggle_maintain extends PluginMaintain
    */
   function install($plugin_version, &$errors=array())
   {
-    // Phase 1 requires no custom tables or columns; legacy scaffold removed.
+    $query = '
+CREATE TABLE IF NOT EXISTS '.CPT_OWNER_PROFILE_TABLE.' (
+  id int(11) NOT NULL AUTO_INCREMENT,
+  root_album_id int(11) NOT NULL,
+  owner_user_id int(11) NOT NULL,
+  field_key varchar(64) NOT NULL,
+  value_text text DEFAULT NULL,
+  tag_id int(11) DEFAULT NULL,
+  updated_at datetime NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY root_field (root_album_id, field_key),
+  KEY owner_user_id (owner_user_id),
+  KEY tag_id (tag_id)
+)';
+
+    if (!pwg_query($query)) {
+      $errors[] = 'CPT: failed to create owner profile table';
+    }
   }
 
   /**
@@ -63,5 +80,8 @@ class core_privacy_toggle_maintain extends PluginMaintain
    * Perform here all cleaning tasks when the plugin is removed
    * you should revert all changes made in 'install'
    */
-  function uninstall() { /* nothing to cleanup for Phase 1 */ }
+  function uninstall()
+  {
+    pwg_query('DROP TABLE IF EXISTS '.CPT_OWNER_PROFILE_TABLE);
+  }
 }
