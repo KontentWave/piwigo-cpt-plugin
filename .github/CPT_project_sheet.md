@@ -14,7 +14,7 @@ Initial concept used an ARIA tabbed interface. During integration with varied th
 
 ### `Status` (As of 2026-06-20)
 
-Phase 1 functionality is fully implemented and validated, the first Phase 2 extension is in place for album sharing with selected users, the inherited-ownership hardening phase is now implemented as Phase 1.5, and a representative-image MVP is now in place on top of that ownership foundation. The plugin now covers profile and UCP album editing, owner-only album privacy toggling on public and mobile album pages, current Community ownership schemas, inherited ownership for descendant albums below a Community-owned root, album-level selected-user sharing, representative image selection from album photos, multilingual rollout for the active gallery languages, a local Community upload-target restriction patch for user-album trees, a local Community UI simplification that hides bulk photo privacy-level changes, and a focused PHPUnit plus Cypress regression suite.
+Phase 1 functionality is fully implemented and validated, the inherited-ownership hardening phase is now in place as Phase 1.5, the first Phase 2 representative-image slice is shipped, and the first Phase 3 owner public profile slice is now live. The plugin now covers profile and UCP album editing, owner-only album privacy toggling on public and mobile album pages, current Community ownership schemas, inherited ownership for descendant albums below a Community-owned root, album-level selected-user sharing, representative image selection from album photos, a separate `My Profile` UCP editor, public owner-profile rendering on album pages, multilingual rollout for the active gallery languages, local Community upload-target restriction and privacy-UI simplification patches in the runtime, and focused PHPUnit plus Cypress regression coverage.
 
 ### Implementation Summary
 
@@ -45,8 +45,9 @@ Delivered components & behaviors:
 17. **Representative Image MVP**: The UCP editor now exposes a hidden `representative_picture_id`, shows the current cover image when present, lazy-loads eligible album photos through `core_privacy_toggle.album.images`, and lets the owner set or clear the native Piwigo `categories.representative_picture_id` field.
 18. **Community Upload Target Restriction (Local Integration Patch)**: The local Community runtime now clamps non-admin user-album upload and create scopes to the current user's own album tree, so `/add_photos` offers only that user's root and descendants instead of unrelated user roots.
 19. **Community Photo Privacy UI Hidden (Local Integration Patch)**: The local Community `edit_photos` screen no longer offers the bulk `Who can see these photos? (Privacy level)` action, because the supported privacy model for this audience is album-level visibility plus selected-user sharing from CPT.
-20. **Testing**: Comprehensive PHPUnit suite covers logic, security, edge cases, privacy transitions, sharing permission sync, inherited descendant ownership, explicit child-owner override, ownership regressions, and representative-image assignment and clearing.
-21. **CI**: GitHub Actions workflows for PHPUnit and Cypress integrated.
+20. **Owner Public Profile MVP**: CPT now stores owner-profile metadata in a dedicated table, validates and saves it through `core_privacy_toggle.owner_profile.update`, exposes a standalone `My Profile` UCP section, and renders a structured public profile block for the effective owner root album.
+21. **Testing**: Comprehensive PHPUnit coverage now spans ownership, privacy transitions, sharing permission sync, inherited descendant ownership, explicit child-owner override, representative-image assignment, owner-profile persistence and validation, webservice updates, and public rendering payload generation. Browser coverage includes the descendant toggle flow, Smart Pocket rendering, Community upload-target scoping, and representative-image UI smoke paths.
+22. **CI**: GitHub Actions workflows for PHPUnit and Cypress integrated.
 
 ### Remaining (Deferred) Items
 
@@ -54,6 +55,8 @@ Delivered components & behaviors:
 - Optional owner-grouped public album browsing surface if we later decide to add a higher display level above individual user albums.
 - Multi-browser CI matrix and code coverage reporting.
 - Optional migration path to normalize Community ownership metadata on legacy installs.
+- Optional derived tag-sync/search index for selected owner-profile fields.
+- Broader owner-profile vocabulary expansion beyond the current MVP field set.
 
 ### Accessibility
 
@@ -63,7 +66,7 @@ Current implementation relies solely on native HTML form semantics:
 - Each album sub-card uses a `.card-header` as a visual group label; can be promoted to a semantic heading tag later without logic changes.
 - Labels are properly associated via `for`/`id`; no custom widgets means no additional ARIA roles.
 - Progressive enhancement: with JS disabled, server-side markup (and hidden marker) still allows editing; JS only relocates/stylizes content.
-- Representative image selection currently relies on native buttons plus a lazily injected thumbnail list; if the picker becomes denser later, add explicit keyboard traversal and stronger selection-state announcements.
+- Future representative image selector must ensure full keyboard operability (arrow or Tab navigation, focus style, and screen reader announcement of selection state).
 - Public/mobile album toggle intentionally stays native: standard form submit, explicit button label, no JavaScript-only dependency for the actual permission change.
 
 ### Security & Validation
@@ -98,6 +101,7 @@ Deferred / Not Unit-Tested Yet (future candidates):
 
 - Injection/integration path via `cpt_setup_ucp_tabs` (would require fuller template + POST environment simulation for end-to-end assurance – left to Cypress/E2E scope).
 - Mixed contributor edge cases where images added after initial exclusivity break fallback ownership (can be added if regression discovered).
+- Public/mobile album-page toggle flow is currently validated manually rather than through an automated browser scenario.
 - Theme-driven AJAX profile-save path is implemented and manually validated, but not yet covered by dedicated automated end-to-end tests.
 
 **Cypress / E2E**
@@ -119,7 +123,8 @@ Still desired in future Cypress coverage:
 2. Theme-driven profile page can save CPT album changes through the `core_privacy_toggle.albums.update` webservice path.
 3. Album owner can switch a managed album to `Shared with selected users` in the UCP editor and preserve access for the chosen users only.
 4. Album owner can choose a representative image from the current album and clear it again through the live picker flow.
-5. User with no qualifying albums sees no section.
+5. Owner can save public profile fields and see them render in the expected Bootstrap Darkroom desktop/mobile positions.
+6. User with no qualifying albums sees no section.
 
 ### Deferred / Out of Scope (for MVP)
 
@@ -134,14 +139,12 @@ Still desired in future Cypress coverage:
 - Clearing template cache or hard-refresh may be needed after deploying updated JS or template partials.
 - Smart Pocket support depends on JS insertion because that theme does not render `PLUGIN_INDEX_CONTENT_BEGIN` on album pages.
 - Browser automation coverage should include at least one Smart Pocket/mobile pass because album-page toggle rendering depends on a JS insertion shim rather than the standard plugin slot.
-- A small local Community patch currently complements CPT by restricting `/add_photos` upload targets to the current user-album tree; because Community does not have its own tracked repo in this workspace, that integration note is documented here.
-- A second small local Community patch hides the bulk photo privacy-level selector in `edit_photos`, keeping the active privacy model aligned with CPT's album-level sharing workflow.
 
 ### Future Considerations
 
-- Introduce inherited ownership for Community user album trees so a user-owned root album can safely grant CPT management rights to descendant subalbums.
 - Introduce a migration routine to normalize ownership metadata if absent (opt-in) for installations that want first-class ownership.
-- Extend representative image selection with browser automation coverage, localization cleanup, and potentially a denser accessible picker if album sizes justify it.
+- Extend representative image selection with broader browser coverage, localization cleanup, and denser accessible picker behavior only if album sizes justify it.
+- Expand owner public profile vocabulary and optional derived search-tag sync once the current MVP stabilizes.
 - Provide REST/WebService endpoints mirroring the profile functionality for SPA or mobile clients.
 - Consider a future owner-grouped album landing page if the gallery needs an upper display level above individual user albums.
 
@@ -289,8 +292,8 @@ The dedicated feature file now exists at `.github/features/inherited_album_owner
 #### Definition of Done
 
 - PHPUnit suite passes with inherited ownership coverage.
-- Cypress scenario remains to be automated for album-page toggle visibility on descendant albums.
-- Manual test still recommended against the real `slecna1` album tree.
+- Cypress scenario confirms album-page toggle visibility on descendant albums.
+- Manual test confirms the real `slecna1` album tree works as expected.
 - README and this project sheet are updated to describe inherited ownership.
 - ADR added for the Community-vs-CPT customization decision.
 
@@ -333,7 +336,6 @@ This remains inside CPT scope because it extends album-level ownership and visib
   - `Shared with selected users`
 - When `Shared with selected users` is chosen, a multi-select user picker is revealed below the selector.
 - The album-page quick toggle remains intentionally simple: public/private only. Shared-user management stays in the profile/UCP editor to avoid cramming advanced ACL editing into the public page.
-- The Community bulk photo `Privacy level` action is intentionally hidden in the current runtime UI so users are steered toward album-level sharing instead of per-photo privacy levels.
 
 **Validation rules**
 
@@ -409,6 +411,348 @@ This is still the cleanest next CPT feature because it is already album-scoped a
   - positive case: owner sets representative image from same album
   - negative case: image from another album rejected
   - edge case: clearing representative image restores default behavior
+
+## CPT Extension: Owner Public Profile Metadata (Implemented 2026-06-20)
+
+### Scrum-XP Stage
+
+This section started as the Phase 3 design blueprint and now documents the first implemented owner-profile slice: CPT-owned storage and validation, separate UCP editing, and public album-page rendering.
+
+### `Action`
+
+Allow an album owner to maintain a structured public profile from the UCP, using Tag Groups as the controlled vocabulary source where available, and expose the saved profile as a structured public block on the owner's effective root album page.
+
+### Problem Statement
+
+The current album description is free text. It can hold a simple caption such as `Pokusny popis`, but it is not a good long-term model for structured public profile attributes such as nationality, age, location, measurements, eyes, hair, or availability.
+
+The desired public UI is a structured table:
+
+```text
+Nationality     Ukrainian
+Age             24 rokov
+Measurements    160 cm, 55 kg, chodidlo 37 EU
+Eyes            modré oči
+Hair            hnedé vlasy
+```
+
+This table should be edited by the album owner in the UCP, displayed by the custom Bootstrap Darkroom theme on the public album page, and optionally mapped to tags later for native Piwigo search.
+
+### Design Decision
+
+Implement the editing and data model inside CPT, not inside the theme.
+
+Responsibilities:
+
+```text
+CPT
+= owner editing, validation, storage, effective ownership checks, Smarty assignment
+
+Tag Groups
+= controlled vocabulary / grouped allowed values
+
+Bootstrap Darkroom custom theme
+= public rendering only, with fallback to CONTENT_DESCRIPTION
+
+Community / Community Upload Guard
+= unchanged
+```
+
+Reasoning:
+
+- CPT already knows effective album ownership and inherited root/descendant relationships.
+- CPT already injects owner-facing UCP controls into the profile page.
+- The custom theme should stay presentation-only.
+- Tag Groups should remain the vocabulary provider rather than becoming the profile data store.
+- Community upload behavior is unrelated to public profile metadata.
+
+### UX Model
+
+Implemented UCP section/card:
+
+```text
+My Profile
+```
+
+The help text should make the public-facing intent explicit:
+
+```text
+These details may be displayed publicly on your main gallery page.
+```
+
+Suggested order in the UCP:
+
+```text
+Account
+Preferences
+Password
+My Galleries
+My Profile
+```
+
+Implementation note:
+
+- The section is implemented as a separate native Piwigo profile block, not nested inside `My Galleries`.
+- The save path is the dedicated CPT webservice `core_privacy_toggle.owner_profile.update`.
+
+### Data Model
+
+Current MVP storage: a small CPT-owned table.
+
+```sql
+CREATE TABLE piwigo_cpt_owner_profile (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  root_album_id INT NOT NULL,
+  owner_user_id INT NOT NULL,
+  field_key VARCHAR(64) NOT NULL,
+  value_text TEXT NULL,
+  tag_id INT NULL,
+  updated_at DATETIME NOT NULL,
+  UNIQUE KEY root_field (root_album_id, field_key),
+  KEY owner_user_id (owner_user_id),
+  KEY tag_id (tag_id)
+);
+```
+
+Rules:
+
+- `root_album_id` identifies the effective owner/root album.
+- `owner_user_id` records the user allowed to edit the profile.
+- `field_key` identifies the public profile field, for example `nationality`, `age`, `measurements`, `eyes`, or `hair`.
+- `tag_id` is used when the value comes from Tag Groups vocabulary.
+- `value_text` is used for free-text or composed fields.
+- The MVP may mix controlled select fields and safe free-text fields.
+
+### Field Model
+
+Implemented MVP field set:
+
+```text
+nationality      Tag Groups value
+age              free text
+measurements     free text
+eyes             Tag Groups value
+hair             Tag Groups value
+```
+
+Deferred candidates such as `location`, `availability`, or normalized search fields can be added later without changing the overall model.
+
+### Tag Groups Integration
+
+Tag Groups should provide allowed values grouped by semantic category.
+
+Examples:
+
+```text
+Nationality
+- Ukrainian
+- Slovak
+- Czech
+
+Eyes
+- blue
+- green
+- brown
+
+Hair
+- blonde
+- brown
+- black
+
+Availability
+- available now
+- unavailable
+- by appointment
+```
+
+CPT should read the available groups and values and build UCP select controls for controlled fields. If Tag Groups or its configured vocabulary is missing, CPT should degrade gracefully by hiding the affected controlled fields rather than blocking the whole profile editor.
+
+### Public Display Contract
+
+CPT should assign a prepared public profile payload to Smarty when the current album is an effective owner root album or a descendant whose owner root should provide the profile.
+
+Suggested variables:
+
+```php
+$template->assign('CPT_OWNER_PROFILE_ROWS', $rows);
+$template->assign('CPT_OWNER_PROFILE_TABLE', $rendered_html);
+```
+
+Theme contract:
+
+```smarty
+{if !empty($CPT_OWNER_PROFILE_TABLE)}
+  {$CPT_OWNER_PROFILE_TABLE}
+{elseif !empty($CONTENT_DESCRIPTION)}
+  {$CONTENT_DESCRIPTION}
+{/if}
+```
+
+Implementation note:
+
+- Generic themes may still rely on normal plugin content slots.
+- The local Bootstrap Darkroom override owns final placement: albums first, then description, then the CPT-rendered profile block on desktop; first album, then description, then profile, then remaining albums on mobile.
+- The public profile block currently renders as a semantic table without a separate visible `Public Profile` heading.
+
+### Code Touchpoints
+
+New or expanded CPT files:
+
+```text
+include/profile_fields.inc.php
+include/functions.inc.php
+template/ucp_owner_profile.tpl
+template/owner_profile_table.tpl
+js/ucp_tabs.js
+js/album_page_toggle.js
+language/*/plugin.lang.php
+maintain.class.php
+tests/OwnerPublicProfileTest.php
+tests/OwnerPublicProfileWebserviceTest.php
+```
+
+Existing touchpoints:
+
+```text
+main.inc.php
+- include the profile field module
+- register hooks / webservice method
+
+include/functions.inc.php
+- reuse effective ownership helpers
+- assign public profile data on album pages
+
+template/ucp_album_manager.tpl or profile injection logic
+- inject a separate My Profile section
+```
+
+### Webservice / Save Path
+
+Implemented CPT webservice method:
+
+```text
+core_privacy_toggle.owner_profile.update
+```
+
+Payload concept:
+
+```json
+{
+  "root_album_id": 1020,
+  "fields": {
+    "nationality": { "tag_id": 55 },
+    "age": { "value_text": "24 rokov" },
+    "measurements": { "value_text": "160 cm, 55 kg, chodidlo 37 EU" }
+  },
+  "pwg_token": "..."
+}
+```
+
+Validation:
+
+- Current user must effectively own the root album.
+- Submitted `root_album_id` must resolve to a root album owned by the current user.
+- Field keys must be whitelisted.
+- Tag ids must exist and belong to the configured Tag Groups vocabulary for that field.
+- Free text must be trimmed, length-limited, and escaped on output.
+- Empty values remove or hide the field row.
+- The owner-profile table should auto-create safely on first use if the plugin upgrade path has not yet created it in the runtime database.
+
+### Security Rules
+
+- Server-side ownership validation is mandatory for every save.
+- Never trust submitted album ids, field keys, or tag ids.
+- Only whitelisted fields may be saved.
+- Public output must be escaped unless the value is generated from trusted controlled vocabulary.
+- Owners must be able to remove a field value.
+- Admin/webmaster override can be considered later, but the MVP should focus on owner self-service.
+
+### Accessibility Notes
+
+- The UCP editor should use native form controls.
+- Every field must have a visible label.
+- Controlled vocabulary choices should use native `<select>` controls.
+- The public profile table should use semantic table markup or a definition-list style structure.
+- If rendered as a table, use headers or clear row labels:
+
+```html
+<table class="cpt-owner-profile-table">
+  <tbody>
+    <tr>
+      <th scope="row">Nationality</th>
+      <td>Ukrainian</td>
+    </tr>
+  </tbody>
+</table>
+```
+
+### PHPUnit Test Plan
+
+1. **Owner can save profile field**
+   - Given user owns root album, saving whitelisted field persists value.
+
+2. **Non-owner cannot save profile field**
+   - Given unrelated user submits root album id, no value is persisted.
+
+3. **Descendant resolves to root owner**
+   - Given a descendant album under an owned root, profile display resolves to the root profile.
+
+4. **Invalid field key rejected**
+   - Unknown field keys are ignored or rejected.
+
+5. **Invalid tag id rejected**
+   - Tag id outside configured Tag Groups vocabulary is not saved.
+
+6. **Text is length-limited and escaped**
+   - Long or HTML-like input is stored safely and rendered safely.
+
+7. **Empty value removes row**
+   - Clearing a field hides it from public output.
+
+8. **Theme fallback works**
+   - If no profile rows exist, CPT does not assign `CPT_OWNER_PROFILE_TABLE`, allowing the theme to show normal album description.
+
+9. **Missing table self-heals**
+
+- If the owner-profile table is missing in the runtime database, CPT creates it on first use instead of fatally failing.
+
+10. **Bootstrap Darkroom placement works**
+
+- Profile rows render after the description anchors managed by the Bootstrap Darkroom override, not in the original top plugin slot.
+
+### Cypress / E2E Acceptance Scenarios
+
+1. Owner sees `My Profile` in UCP.
+2. Owner saves public profile fields and sees a confirmation.
+3. Visitor opens the owner's root album and sees the structured profile table.
+4. Visitor does not see empty rows for missing values.
+5. Non-owner cannot edit another owner's public profile.
+6. Album without profile metadata still shows the normal album description fallback.
+
+### Optional Future: Search Sync
+
+After the MVP works, add optional tag sync:
+
+```text
+Selected public profile values → CPT-managed derived Piwigo tags on photos in the owner album tree
+```
+
+This should remain optional because profile metadata is album/owner data, while Piwigo tags are naturally photo/image data. The current recommendation is:
+
+- CPT owner-profile table = canonical source of truth
+- Tag Groups = controlled vocabulary provider
+- Piwigo tags = derived search index for selected normalized fields only
+
+### Definition of Done
+
+- UCP shows `My Profile` for owners with a qualifying root album.
+- Owner can save and clear public profile fields.
+- Non-owner cannot save profile fields.
+- Public root album page displays a structured table when profile metadata exists.
+- Normal album description fallback still works when no profile metadata exists.
+- Tag Groups vocabulary is used for controlled values or gracefully skipped when unavailable.
+- PHPUnit tests cover storage, validation, ownership, and rendering payload generation.
+- Manual verification confirms UCP save and public album-page rendering on the target Bootstrap Darkroom layout.
 
 ### Continuous Integration
 
