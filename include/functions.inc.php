@@ -82,18 +82,16 @@ function cpt_prepare_album_page_toggle(): void
 {
 	global $template, $user;
 
-	if (empty($user['id'])) {
-		return;
-	}
-
 	$category = cpt_get_current_album_page_category();
 	if ($category === null) {
 		return;
 	}
 
 	$album_id = (int) $category['id'];
-	$user_id = (int) $user['id'];
-	if (!cpt_album_is_owned_by($album_id, $user_id)) {
+	$user_id = (int) ($user['id'] ?? 0);
+	$owns_album = $user_id > 0 && cpt_album_is_owned_by($album_id, $user_id);
+	$has_public_profile = cpt_get_owner_profile_public_data_for_album($album_id) !== null;
+	if (!$owns_album && !$has_public_profile) {
 		return;
 	}
 
@@ -194,7 +192,32 @@ function cpt_attach_album_page_toggle(): void
 	$template->set_filename('cpt_album_page_toggle', realpath(CORE_PRIVACY_TOGGLE_PATH.'template/album_page_toggle.tpl'));
 	$html = $template->parse('cpt_album_page_toggle', true);
 	cpt_append_index_content_begin($html);
-	cpt_inject_album_page_toggle_assets($html);
+	cpt_inject_album_page_assets($html);
+}
+
+function cpt_attach_owner_profile_to_album_page(): void
+{
+	global $template;
+
+	$category = cpt_get_current_album_page_category();
+	if ($category === null) {
+		return;
+	}
+
+	$profile = cpt_get_owner_profile_public_data_for_album((int) $category['id']);
+	if ($profile === null) {
+		return;
+	}
+
+	$template->assign('CPT_OWNER_PROFILE_ROWS', $profile['rows']);
+	$template->set_filename('cpt_owner_profile_table', realpath(CORE_PRIVACY_TOGGLE_PATH.'template/owner_profile_table.tpl'));
+	$html = $template->parse('cpt_owner_profile_table', true);
+	$template->assign('CPT_OWNER_PROFILE_TABLE', $html);
+
+	if (!cpt_theme_uses_album_page_js_profile_placement()) {
+		cpt_append_index_content_begin($html);
+	}
+	cpt_inject_album_page_assets($html);
 }
 
 /**
@@ -236,17 +259,31 @@ function cpt_append_index_content_begin(string $html): void
 	);
 }
 
+function cpt_theme_uses_album_page_js_profile_placement(): bool
+{
+	if (!function_exists('get_themeconf')) {
+		return false;
+	}
+
+	return get_themeconf('id') === 'bootstrap_darkroom';
+}
+
 /**
  * Expose the album-page shortcut for themes that skip PLUGIN_INDEX_CONTENT_BEGIN.
  */
-function cpt_inject_album_page_toggle_assets(string $html_partial): void
+function cpt_inject_album_page_assets(string $html_partial): void
 {
 	$json = json_encode($html_partial, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT);
-	$inline = 'window.CPT_ALBUM_PAGE_HTML = '.$json.';window.CPT_ALBUM_PAGE_ASSETS_READY=1;';
+	$inline = 'window.CPT_ALBUM_PAGE_HTML = (typeof window.CPT_ALBUM_PAGE_HTML === "string" ? window.CPT_ALBUM_PAGE_HTML : "") + '.$json.';window.CPT_ALBUM_PAGE_ASSETS_READY=1;';
 
 	global $template;
 	if (isset($template->scriptLoader)) {
 		$template->scriptLoader->add_inline($inline, array('cpt-album-page-toggle'));
+		return;
+	}
+
+	if (method_exists($template, 'append')) {
+		$template->append('footer_msgs', '<script>'.$inline.'</script>');
 	}
 }
 
@@ -395,11 +432,6 @@ function cpt_get_album_tree_sort_key(int $album_id): string
 
 	return $cache[$album_id];
 }
-
-/**
- * Fallback: count albums that exclusively contain photos added by this user.
- * Safe alternative when ownership column does not exist.
- */
 function cpt_count_albums_contributed_exclusive(int $user_id): int
 {
 	$sql = 'SELECT COUNT(*) AS cnt FROM (
@@ -542,7 +574,6 @@ function cpt_get_album_image_square_src(array $image): string
 		return '';
 	}
 }
-
 function cpt_update_album_representative(int $album_id, ?int $image_id, int $user_id): bool
 {
 	if (!cpt_album_is_owned_by($album_id, $user_id)) {
@@ -1180,6 +1211,51 @@ function cpt_get_owner_profile_editor_data(int $user_id): ?array
 		'root_album_id' => $root_album_id,
 		'root_album_name' => (string) ($root_album['name'] ?? ''),
 		'fields' => $fields,
+	];
+}
+
+function cpt_get_owner_profile_public_data_for_album(int $album_id): ?array
+{
+	if ($album_id <= 0 || !cpt_ensure_owner_profile_table()) {
+		return null;
+	}
+
+	$root_album_id = cpt_get_effective_owner_root_album_id_for_album($album_id);
+	if ($root_album_id === null) {
+		return null;
+	}
+
+	$owner_user_id = cpt_get_album_effective_owner_id($root_album_id);
+	if ($owner_user_id === null) {
+		return null;
+	}
+
+	$saved_rows = cpt_fetch_owner_profile_rows($root_album_id, $owner_user_id);
+	if (empty($saved_rows)) {
+		return null;
+	}
+
+	$rows = [];
+	foreach (cpt_get_owner_profile_field_schema() as $field_key => $definition) {
+		if (empty($saved_rows[$field_key]['value_text'])) {
+			continue;
+		}
+
+		$rows[] = [
+			'key' => (string) $field_key,
+			'label' => (string) ($definition['label'] ?? $field_key),
+			'value_text' => (string) $saved_rows[$field_key]['value_text'],
+		];
+	}
+
+	if (empty($rows)) {
+		return null;
+	}
+
+	return [
+		'root_album_id' => (int) $root_album_id,
+		'owner_user_id' => (int) $owner_user_id,
+		'rows' => $rows,
 	];
 }
 

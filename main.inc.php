@@ -57,6 +57,7 @@ add_event_handler('loc_begin_profile', 'cpt_setup_ucp_tabs');
 add_event_handler('loc_begin_index', 'cpt_prepare_album_page_toggle');
 add_event_handler('loc_begin_index', 'cpt_handle_album_page_toggle');
 add_event_handler('loc_end_index', 'cpt_attach_album_page_toggle');
+add_event_handler('loc_end_index', 'cpt_attach_owner_profile_to_album_page');
 add_event_handler('ws_add_methods', 'cpt_add_ws_methods');
 // Safety net: if early POST handling somehow missed (theme workflow), run a late check
 

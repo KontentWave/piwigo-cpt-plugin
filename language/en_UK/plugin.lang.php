@@ -52,5 +52,6 @@ $lang['Age'] = 'Age';
 $lang['Measurements'] = 'Measurements';
 $lang['Eyes'] = 'Eyes';
 $lang['Hair'] = 'Hair';
+$lang['Public Profile'] = 'Public Profile';
 
 ?>

@@ -63,3 +63,24 @@ button.cpt-album-toggle-button:focus {
   outline: 2px solid rgba(255, 166, 64, 0.45);
   outline-offset: 2px;
 }
+
+.cpt-owner-profile-public {
+  margin: 0.75rem 0 1.25rem;
+}
+
+.cpt-owner-profile-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.cpt-owner-profile-table th,
+.cpt-owner-profile-table td {
+  padding: 0.45rem 0;
+  vertical-align: top;
+  text-align: left;
+}
+
+.cpt-owner-profile-table th {
+  width: 35%;
+  font-weight: 700;
+}
