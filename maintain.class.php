@@ -21,20 +21,7 @@ class core_privacy_toggle_maintain extends PluginMaintain
    */
   function install($plugin_version, &$errors=array())
   {
-    $query = '
-CREATE TABLE IF NOT EXISTS '.CPT_OWNER_PROFILE_TABLE.' (
-  id int(11) NOT NULL AUTO_INCREMENT,
-  root_album_id int(11) NOT NULL,
-  owner_user_id int(11) NOT NULL,
-  field_key varchar(64) NOT NULL,
-  value_text text DEFAULT NULL,
-  tag_id int(11) DEFAULT NULL,
-  updated_at datetime NOT NULL,
-  PRIMARY KEY (id),
-  UNIQUE KEY root_field (root_album_id, field_key),
-  KEY owner_user_id (owner_user_id),
-  KEY tag_id (tag_id)
-)';
+    $query = cpt_get_owner_profile_table_schema_sql();
 
     if (!pwg_query($query)) {
       $errors[] = 'CPT: failed to create owner profile table';

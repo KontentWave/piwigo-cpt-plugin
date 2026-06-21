@@ -77,7 +77,8 @@
         <div class="text-right mt-3 cpt-save-actions">
           <button type="button" class="btn btn-primary cpt-save-button">{'Save Changes'|@translate}</button>
         </div>
-      {else}
+      {/if}
+      {if !isset($UCP_ALBUMS) || $UCP_ALBUMS|@count == 0}
         <p class="text-muted mb-0">{'You have no editable galleries yet.'|@translate}</p>
       {/if}
 

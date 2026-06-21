@@ -42,5 +42,15 @@ $lang['Clear cover image'] = 'Clear cover image';
 $lang['No cover image selected.'] = 'No cover image selected.';
 $lang['Current cover image is unavailable.'] = 'Current cover image is unavailable.';
 $lang['This gallery has no photos available for a cover image yet.'] = 'This gallery has no photos available for a cover image yet.';
+$lang['My Public Profile'] = 'My Public Profile';
+$lang['My Profile'] = 'My Profile';
+$lang['These details may be displayed publicly on your main gallery page.'] = 'These details may be displayed publicly on your main gallery page.';
+$lang['Save Public Profile'] = 'Save Public Profile';
+$lang['Your public profile has been saved.'] = 'Your public profile has been saved.';
+$lang['Nationality'] = 'Nationality';
+$lang['Age'] = 'Age';
+$lang['Measurements'] = 'Measurements';
+$lang['Eyes'] = 'Eyes';
+$lang['Hair'] = 'Hair';
 
 ?>

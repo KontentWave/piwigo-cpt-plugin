@@ -30,6 +30,31 @@
   clear: both;
 }
 
+.cpt-owner-profile .cpt-help,
+.cpt-owner-profile .cpt-status {
+  margin-bottom: 1rem;
+}
+
+.cpt-owner-profile .cpt-owner-profile-field {
+  clear: both;
+  margin-bottom: 1rem;
+}
+
+.cpt-owner-profile .col-12 {
+  max-width: 100%;
+}
+
+.cpt-owner-profile .form-control {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+}
+
+.cpt-owner-profile .cpt-owner-profile-save-actions {
+  clear: both;
+  margin-top: 1.25rem;
+}
+
 @media (max-width: 768px) {
   .cpt-album-manager .card-body {
     padding-bottom: 5.5rem;
@@ -44,6 +69,10 @@
   }
 
   .cpt-album-manager .cpt-save-button {
+    width: 100%;
+  }
+
+  .cpt-owner-profile .cpt-owner-profile-save-button {
     width: 100%;
   }
 }

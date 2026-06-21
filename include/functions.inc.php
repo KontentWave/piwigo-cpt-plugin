@@ -64,12 +64,14 @@ function cpt_setup_ucp_tabs(): void
 
 		$template->assign('UCP_ALBUMS', $albums);
 		$template->assign('CPT_SHAREABLE_USERS', cpt_get_shareable_user_options($user_id));
+		$template->assign('UCP_OWNER_PROFILE', cpt_get_owner_profile_editor_data($user_id));
 
 		// Render partial (will be injected by JS; contains only inner controls)
 		// Use set_filename + parse instead of fetch (fetch not available in this env)
 		$template->set_filename('cpt_ucp_album_manager', realpath(CORE_PRIVACY_TOGGLE_PATH.'template/ucp_album_manager.tpl'));
 		$partial = $template->parse('cpt_ucp_album_manager', true);
 		cpt_attach_album_manager_to_profile();
+		cpt_attach_owner_profile_to_profile();
 		cpt_inject_album_manager_assets($partial);
 }
 
@@ -253,8 +255,23 @@ function cpt_inject_album_page_toggle_assets(string $html_partial): void
  */
 function cpt_attach_album_manager_to_profile(): void
 {
+	cpt_attach_profile_block('template/ucp_album_manager.tpl', l10n('My Galleries'));
+}
+
+function cpt_attach_owner_profile_to_profile(): void
+{
+	if (empty(cpt_get_owner_profile_editor_data((int) ($GLOBALS['user']['id'] ?? 0)))) {
+		return;
+	}
+
+	cpt_attach_profile_block('template/ucp_owner_profile.tpl', l10n('My Profile'));
+}
+
+function cpt_attach_profile_block(string $relative_template_path, string $block_name): void
+{
 	global $template;
-	$template_path = realpath(CORE_PRIVACY_TOGGLE_PATH.'template/ucp_album_manager.tpl');
+
+	$template_path = realpath(CORE_PRIVACY_TOGGLE_PATH.$relative_template_path);
 	if ($template_path === false) {
 		return;
 	}
@@ -269,7 +286,7 @@ function cpt_attach_album_manager_to_profile(): void
 	}
 
 	$block = array(
-		'name' => l10n('My Galleries'),
+		'name' => $block_name,
 		'desc' => '',
 		'standard_show_save' => false,
 		'template' => $template_path,
@@ -670,6 +687,15 @@ function cpt_add_ws_methods($arr): void
 		),
 		'Update owned albums from AJAX-driven profile pages.'
 	);
+	$service->addMethod(
+		'core_privacy_toggle.owner_profile.update',
+		'cpt_ws_update_owner_profile',
+		array(
+			'payload' => array(),
+			'pwg_token' => array(),
+		),
+		'Update the owner public profile from AJAX-driven profile pages.'
+	);
 }
 
 function cpt_ws_get_album_images($params, &$service)
@@ -721,6 +747,30 @@ function cpt_ws_update_albums($params, &$service)
 	}
 
 	return l10n('Your changes have been saved.');
+}
+
+function cpt_ws_update_owner_profile($params, &$service)
+{
+	global $user;
+
+	if (get_pwg_token() !== ($params['pwg_token'] ?? null)) {
+		return new \PwgError(403, 'Invalid security token');
+	}
+
+	if (empty($user['id']) || is_a_guest()) {
+		return new \PwgError(401, 'Access denied');
+	}
+
+	$payload = json_decode(stripslashes((string) ($params['payload'] ?? '')), true);
+	if (!is_array($payload)) {
+		return new \PwgError(400, 'Invalid owner profile payload');
+	}
+
+	if (!cpt_update_owner_profile($payload, (int) $user['id'])) {
+		return new \PwgError(400, 'No owner profile changes were applied');
+	}
+
+	return l10n('Your public profile has been saved.');
 }
 
 /**
@@ -1012,6 +1062,10 @@ function cpt_get_effective_owner_root_album_data(int $user_id): ?array
 function cpt_fetch_owner_profile_rows(int $root_album_id, int $owner_user_id): array
 {
 	$rows = [];
+	if (!cpt_ensure_owner_profile_table()) {
+		return $rows;
+	}
+
 	$result = pwg_query('SELECT field_key, value_text, tag_id FROM '.CPT_OWNER_PROFILE_TABLE.' WHERE root_album_id='.(int) $root_album_id.' AND owner_user_id='.(int) $owner_user_id.' ORDER BY field_key ASC');
 	if (!$result) {
 		return $rows;
@@ -1030,6 +1084,103 @@ function cpt_fetch_owner_profile_rows(int $root_album_id, int $owner_user_id): a
 	}
 
 	return $rows;
+}
+
+function cpt_get_owner_profile_table_schema_sql(): string
+{
+	return 'CREATE TABLE IF NOT EXISTS '.CPT_OWNER_PROFILE_TABLE." (
+	id int(11) NOT NULL AUTO_INCREMENT,
+	root_album_id int(11) NOT NULL,
+	owner_user_id int(11) NOT NULL,
+	field_key varchar(64) NOT NULL,
+	value_text text DEFAULT NULL,
+	tag_id int(11) DEFAULT NULL,
+	updated_at datetime NOT NULL,
+	PRIMARY KEY (id),
+	UNIQUE KEY root_field (root_album_id, field_key),
+	KEY owner_user_id (owner_user_id),
+	KEY tag_id (tag_id)
+)";
+}
+
+function cpt_owner_profile_table_exists(): bool
+{
+	if (array_key_exists('__cpt_owner_profile_table_exists', $GLOBALS)) {
+		return (bool) $GLOBALS['__cpt_owner_profile_table_exists'];
+	}
+
+	$result = pwg_query("SHOW TABLES LIKE '".pwg_db_real_escape_string(CPT_OWNER_PROFILE_TABLE)."'");
+	$exists = (bool) ($result && pwg_db_fetch_row($result));
+	$GLOBALS['__cpt_owner_profile_table_exists'] = $exists;
+
+	return $exists;
+}
+
+function cpt_ensure_owner_profile_table(): bool
+{
+	if (cpt_owner_profile_table_exists()) {
+		return true;
+	}
+
+	$result = pwg_query(cpt_get_owner_profile_table_schema_sql());
+	if ($result === false) {
+		return false;
+	}
+
+	$GLOBALS['__cpt_owner_profile_table_exists'] = true;
+	return true;
+}
+
+function cpt_get_owner_profile_editor_data(int $user_id): ?array
+{
+	if (!cpt_ensure_owner_profile_table()) {
+		return null;
+	}
+
+	$root_album = cpt_get_effective_owner_root_album_data($user_id);
+	if (empty($root_album['id'])) {
+		return null;
+	}
+
+	$root_album_id = (int) $root_album['id'];
+	$rows = cpt_fetch_owner_profile_rows($root_album_id, $user_id);
+	$schema = cpt_get_owner_profile_field_schema();
+	$fields = [];
+
+	foreach ($schema as $field_key => $definition) {
+		$field_type = (string) ($definition['type'] ?? 'text');
+		$field_row = $rows[$field_key] ?? null;
+		$field = [
+			'key' => (string) $field_key,
+			'label' => (string) ($definition['label'] ?? $field_key),
+			'type' => $field_type,
+			'max_length' => isset($definition['max_length']) ? (int) $definition['max_length'] : null,
+			'value_text' => is_array($field_row) ? (string) ($field_row['value_text'] ?? '') : '',
+			'tag_id' => is_array($field_row) && !empty($field_row['tag_id']) ? (int) $field_row['tag_id'] : 0,
+			'options' => [],
+		];
+
+		if ($field_type === 'controlled') {
+			$options = cpt_get_owner_profile_controlled_options((string) $field_key);
+			if (empty($options)) {
+				continue;
+			}
+
+			$field['options'] = $options;
+		}
+
+		$fields[] = $field;
+	}
+
+	if (empty($fields)) {
+		return null;
+	}
+
+	return [
+		'root_album_id' => $root_album_id,
+		'root_album_name' => (string) ($root_album['name'] ?? ''),
+		'fields' => $fields,
+	];
 }
 
 function cpt_normalize_owner_profile_text(string $field_key, string $value): string
@@ -1129,6 +1280,10 @@ function cpt_validate_owner_profile_payload(array $payload, int $user_id): array
 function cpt_save_owner_profile(int $root_album_id, int $owner_user_id, array $fields): bool
 {
 	if ($root_album_id <= 0 || $owner_user_id <= 0 || empty($fields)) {
+		return false;
+	}
+
+	if (!cpt_ensure_owner_profile_table()) {
 		return false;
 	}
 
