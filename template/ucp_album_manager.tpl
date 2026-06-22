@@ -4,6 +4,9 @@
     <h4 class="card-header">{'My Galleries'|@translate}</h4>
     <div class="card-body">
       <p id="cpt-album-manager-help" class="cpt-help text-muted small mb-3">{'Edit your galleries and save them here.'|@translate}</p>
+      {if !empty($CPT_LIMITED_MODE_NOTICE)}
+        <div class="alert alert-info cpt-limited-mode-notice" role="status">{$CPT_LIMITED_MODE_NOTICE|escape}</div>
+      {/if}
       <div class="cpt-status alert" role="status" aria-live="polite" hidden></div>
 
       {if isset($UCP_ALBUMS) && $UCP_ALBUMS|@count > 0}

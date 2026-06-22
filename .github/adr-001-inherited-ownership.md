@@ -45,6 +45,7 @@ Tradeoffs:
 
 ## Follow-up
 
-- Keep Cypress coverage focused on descendant visibility and explicit child-owner override.
+- Cypress smoke coverage now protects descendant visibility, descendant private guest blocking, explicit child-owner override, fallback limited-mode visibility, and the no-qualifying-albums hidden-state path. Broader scenario depth can still grow later from the feature files.
 - Keep CPT documentation explicit about any local Community integration patches that enforce the same owned-tree rule outside CPT itself.
+- Keep the local Community integration patches narrow: upload-target scoping should stay aligned to the effective owned tree, and photo-level privacy UI should remain hidden while CPT remains the album-level privacy authority for this deployment.
 - Revisit only if Community later ships first-class inherited ownership semantics that CPT can trust directly.

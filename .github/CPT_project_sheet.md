@@ -12,9 +12,9 @@ Empower non-admin gallery owners by integrating album management controls direct
 
 Initial concept used an ARIA tabbed interface. During integration with varied themes (e.g. Bootstrap Darkroom) we simplified to a progressive enhancement that injects a single structured fieldset section ("My Galleries") into the existing profile form. This reduced fragility, avoided layout clashes, and preserved full functionality with JavaScript disabled (the section simply does not appear when no albums qualify).
 
-### `Status` (As of 2026-06-20)
+### `Status` (As of 2026-06-22)
 
-Phase 1 functionality is fully implemented and validated, the inherited-ownership hardening phase is now in place as Phase 1.5, the first Phase 2 representative-image slice is shipped, and the first Phase 3 owner public profile slice is now live. The plugin now covers profile and UCP album editing, owner-only album privacy toggling on public and mobile album pages, current Community ownership schemas, inherited ownership for descendant albums below a Community-owned root, album-level selected-user sharing, representative image selection from album photos, a separate `My Profile` UCP editor, public owner-profile rendering on album pages, multilingual rollout for the active gallery languages, local Community upload-target restriction and privacy-UI simplification patches in the runtime, and focused PHPUnit plus Cypress regression coverage.
+Phase 1 functionality is fully implemented and validated, the inherited-ownership hardening phase is now in place as Phase 1.5, the first Phase 2 representative-image slice is shipped, and the first Phase 3 owner public profile slice is now live. The plugin now covers profile and UCP album editing, owner-only album privacy toggling on public and mobile album pages, current Community ownership schemas, inherited ownership for descendant albums below a Community-owned root, album-level selected-user sharing, representative image selection from album photos, a separate `My Profile` UCP editor, public owner-profile rendering on album pages, multilingual rollout for the active gallery languages, local Community upload-target restriction and privacy-UI simplification patches in the runtime, and focused PHPUnit plus Cypress regression coverage including fallback limited-mode and no-qualifying-albums edge cases.
 
 ### Implementation Summary
 
@@ -46,7 +46,7 @@ Delivered components & behaviors:
 18. **Community Upload Target Restriction (Local Integration Patch)**: The local Community runtime now clamps non-admin user-album upload and create scopes to the current user's own album tree, so `/add_photos` offers only that user's root and descendants instead of unrelated user roots.
 19. **Community Photo Privacy UI Hidden (Local Integration Patch)**: The local Community `edit_photos` screen no longer offers the bulk `Who can see these photos? (Privacy level)` action, because the supported privacy model for this audience is album-level visibility plus selected-user sharing from CPT.
 20. **Owner Public Profile MVP**: CPT now stores owner-profile metadata in a dedicated table, validates and saves it through `core_privacy_toggle.owner_profile.update`, exposes a standalone `My Profile` UCP section, and renders a structured public profile block for the effective owner root album.
-21. **Testing**: Comprehensive PHPUnit coverage now spans ownership, privacy transitions, sharing permission sync, inherited descendant ownership, explicit child-owner override, representative-image assignment, owner-profile persistence and validation, webservice updates, and public rendering payload generation. Browser coverage includes the descendant toggle flow, Smart Pocket rendering, Community upload-target scoping, and representative-image UI smoke paths.
+21. **Testing**: Comprehensive PHPUnit coverage now spans ownership, privacy transitions, sharing permission sync, inherited descendant ownership, explicit child-owner override, representative-image assignment, owner-profile persistence and validation, webservice updates, and public rendering payload generation. Browser coverage includes the descendant toggle flow, Smart Pocket rendering, Community upload-target scoping, the representative-image live picker flow, owner-profile save/render coverage, end-to-end selected-user sharing, the theme-driven AJAX album-save path, the fallback limited-mode banner path, and the no-qualifying-albums hidden-state path.
 22. **CI**: GitHub Actions workflows for PHPUnit and Cypress integrated.
 
 ### Remaining (Deferred) Items
@@ -101,8 +101,8 @@ Deferred / Not Unit-Tested Yet (future candidates):
 
 - Injection/integration path via `cpt_setup_ucp_tabs` (would require fuller template + POST environment simulation for end-to-end assurance – left to Cypress/E2E scope).
 - Mixed contributor edge cases where images added after initial exclusivity break fallback ownership (can be added if regression discovered).
-- Public/mobile album-page toggle flow is currently validated manually rather than through an automated browser scenario.
-- Theme-driven AJAX profile-save path is implemented and manually validated, but not yet covered by dedicated automated end-to-end tests.
+- Public/mobile album-page toggle flow is now covered in Cypress smoke for descendant ownership and Smart Pocket rendering, but broader cross-browser coverage is still deferred.
+- Theme-driven AJAX profile-save path is implemented and now covered by dedicated Cypress interception plus persistence assertions.
 
 **Cypress / E2E**
 
@@ -116,15 +116,16 @@ Current automated browser coverage in `_qa/cypress/cypress/e2e/smoke.cy.ts`:
 6. Parent ownership does not override an explicit different child owner when an override-seeded album is provided.
 7. The explicit child owner sees the album-page shortcut when override credentials are configured.
 8. Smart Pocket/mobile album pages render the injected CPT privacy shortcut when the mobile theme is enabled.
+9. The owner can save public profile fields from `My Profile` and see them render on the owned root album page.
+10. The owner can choose a different representative image for a managed album, save it, clear it again, and restore the original representative through the live picker flow.
+11. The owner can switch a managed descendant album to `Shared with selected users`, preserve access for the chosen user, and keep guests blocked until the album is restored to public.
+12. The owner can save album changes on the profile page through the `core_privacy_toggle.albums.update` AJAX webservice path, with the intercepted payload and persisted result both verified.
+13. When ownership columns are unavailable, the fallback limited-mode banner is shown and fallback-eligible albums remain manageable from `My Galleries`.
+14. A logged-in account with no qualifying albums sees no CPT management sections in the profile/UCP flow.
 
 Still desired in future Cypress coverage:
 
-1. Limited mode banner appears when using fallback heuristic.
-2. Theme-driven profile page can save CPT album changes through the `core_privacy_toggle.albums.update` webservice path.
-3. Album owner can switch a managed album to `Shared with selected users` in the UCP editor and preserve access for the chosen users only.
-4. Album owner can choose a representative image from the current album and clear it again through the live picker flow.
-5. Owner can save public profile fields and see them render in the expected Bootstrap Darkroom desktop/mobile positions.
-6. User with no qualifying albums sees no section.
+1. Richer end-to-end scenarios from `.github/features/ucp_album_management.feature` beyond the current smoke/regression slice.
 
 ### Deferred / Out of Scope (for MVP)
 

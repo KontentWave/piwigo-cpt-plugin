@@ -14,6 +14,7 @@ if (!defined('CORE_PRIVACY_TOGGLE_PUBLIC')) {
 function cpt_setup_ucp_tabs(): void
 {
 	global $user, $template;
+	$limited_mode_notice = null;
 
 	// must have authenticated user context
 	if (empty($user['id'])) {
@@ -55,7 +56,8 @@ function cpt_setup_ucp_tabs(): void
 		$albums = cpt_fetch_albums_contributed_exclusive($user_id);
 		if (!empty($albums) && !pwg_get_session_var('is_admin')) {
 			// Inform user about limited mode once per request
-			global $page; $page['infos'][] = l10n('CPT: Limited mode enabled — only albums exclusively containing your photos are listed.');
+			$limited_mode_notice = l10n('CPT: Limited mode enabled — only albums exclusively containing your photos are listed.');
+			global $page; $page['infos'][] = $limited_mode_notice;
 		}
 	}
 	if (empty($albums)) { // defensive: if fetch fails, skip enhancement
@@ -65,6 +67,7 @@ function cpt_setup_ucp_tabs(): void
 		$template->assign('UCP_ALBUMS', $albums);
 		$template->assign('CPT_SHAREABLE_USERS', cpt_get_shareable_user_options($user_id));
 		$template->assign('UCP_OWNER_PROFILE', cpt_get_owner_profile_editor_data($user_id));
+		$template->assign('CPT_LIMITED_MODE_NOTICE', $limited_mode_notice);
 
 		// Render partial (will be injected by JS; contains only inner controls)
 		// Use set_filename + parse instead of fetch (fetch not available in this env)

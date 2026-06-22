@@ -141,7 +141,7 @@ If you test additional themes, please open an issue with a screenshot + theme na
 ## 🧪 Testing & CI
 
 - **PHPUnit**: In‑memory harness fakes core tables (`categories`, `images`, `image_category`, `user_access`, `user_cache`).
-- **Cypress**: Smoke coverage now includes descendant-album visibility, privacy toggle state changes, UCP descendant listing, representative-image controls, Smart Pocket mobile rendering, and optional explicit child-owner override scenarios when seeded.
+- **Cypress**: Smoke coverage now includes descendant-album visibility, privacy toggle state changes, UCP descendant listing, owner-profile save/render, representative-image live picker flows, selected-user sharing, AJAX album-save interception/persistence, Smart Pocket mobile rendering, and optional explicit child-owner override scenarios when seeded.
 - **Gherkin Features**: `/.github/features/ucp_album_management.feature` and `/.github/features/inherited_album_ownership.feature` enumerate richer scenarios for future automation.
 - **CI**: GitHub Actions workflows run PHPUnit and Cypress on push / PR.
 
@@ -167,6 +167,7 @@ cd /home/marcel/projects/piwigo
 
 5. The default local credentials expected by the spec are `slecna1` / `000`. Override with `CYPRESS_albumOwnerUser` and `CYPRESS_albumOwnerPass` if your runtime differs.
 6. Run the suite with `npx cypress run --spec cypress/e2e/smoke.cy.ts`.
+7. The shared-visibility scenario defaults to `slecna2` / `000` as the selected viewer. Override with `CYPRESS_sharedViewerUser` and `CYPRESS_sharedViewerPass` if your runtime differs.
 
 Optional explicit child-owner override scenario:
 
@@ -181,18 +182,17 @@ Planned Phase 2 additions: coverage reports & multi‑browser matrix (Firefox).
 
 Displayed banner: “CPT: Limited mode enabled — only albums exclusively containing your photos are listed.”  
 This prevents users from editing collaborative albums when direct ownership metadata is missing.
+The fallback limited-mode banner and the album-free/no-qualifying-albums UCP absence path are now both covered in Cypress smoke.
 
 ---
 
 ## 🚧 Phase 2 (Draft Roadmap)
 
-1. Expand representative-image coverage with live browser automation and multilingual UI polish.
-2. Automate inherited-ownership scenarios in Cypress, especially descendant album-page visibility, privacy transitions, and explicit child-owner override.
-3. Coverage reporting & badge (clover + threshold gate).
-4. Multi‑browser E2E (Firefox; optional WebKit/Playwright).
-5. Ownership migration helper to normalize Community ownership metadata when needed.
-6. Broaden CPT webservices for richer SPA/mobile clients.
-7. Pagination or collapse behavior for very large album counts.
+1. Coverage reporting & badge (clover + threshold gate).
+2. Multi‑browser E2E (Firefox; optional WebKit/Playwright).
+3. Ownership migration helper to normalize Community ownership metadata when needed.
+4. Broaden CPT webservices for richer SPA/mobile clients.
+5. Pagination or collapse behavior for very large album counts.
 
 ---
 

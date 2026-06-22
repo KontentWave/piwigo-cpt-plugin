@@ -35,7 +35,7 @@ This phase hardens CPT against the practical Community plugin limitation where a
 - **Feature: UCP Child Album Listing:** Show owned descendant albums in the `My Galleries` UCP manager even when the child album has no direct `community_user` value.
 - **Feature: Public Album Shortcut for Descendants:** Show the owner-only public/mobile privacy shortcut on descendant albums.
 - **Feature: Permission Sync With Effective Owner:** When a descendant album is made private or shared, preserve access for admin, the effective owner, and selected shared users.
-- **Feature: Regression Protection:** PHPUnit coverage now protects direct ownership, inherited ownership, explicit child-owner override, and exclusive-contributor fallback. Cypress smoke coverage now also protects descendant toggle flows, Smart Pocket rendering, explicit child-owner override, representative-image controls, and Community upload-target scoping.
+- **Feature: Regression Protection:** PHPUnit coverage now protects direct ownership, inherited ownership, explicit child-owner override, and exclusive-contributor fallback. Cypress smoke coverage now also protects descendant toggle flows, Smart Pocket rendering, explicit child-owner override, Community upload-target scoping, owner-profile save/render, representative-image live picker flows, selected-user sharing, the AJAX album-save path, fallback limited-mode banner rendering, and the no-qualifying-albums hidden-state path.
 
 Implementation direction:
 
@@ -56,7 +56,7 @@ Once the MVP is established, the next logical step is to allow basic photo manag
 
 Priority note:
 
-- The representative image chooser is now in place as the first Phase 2 slice; next work is broader browser automation and UI polish around that flow.
+- The representative image chooser is now in place as the first Phase 2 slice, and the live chooser/clear flow plus AJAX save path are now covered in Cypress; next work is UI polish plus broader reporting / multi-browser coverage rather than missing fallback-edge-case automation.
 - Photo privacy controls were explored on the Community side during integration work, but they are not yet a CPT-owned UCP feature and the Community bulk photo privacy-level UI is intentionally hidden in this deployment.
 
 ### Phase 3: Owner Public Profile Metadata (Implemented MVP, Follow-up Pending)
@@ -66,7 +66,7 @@ This phase adds a structured owner-managed public profile for the Community user
 Status note:
 
 - The first Phase 3 slices are now implemented in CPT: schema/persistence, owner-only save webservice, separate UCP editor section, and public album-page rendering.
-- Remaining work in this phase is mainly documentation/spec catch-up and any incremental UI polish or vocabulary expansion.
+- Remaining work in this phase is mainly incremental UI polish, broader vocabulary expansion, and any additional theme-placement regression coverage beyond the current save/render smoke path.
 
 - **Feature: My Profile UCP Section:** Implemented. Owners now get a separate `My Profile` section next to `My Galleries` in the UCP for public-facing profile fields.
 - **Feature: Structured Field Storage:** Store selected values against the effective owner root album or owner profile record, not inside the free-text album description.
