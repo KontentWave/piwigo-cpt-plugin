@@ -12,9 +12,9 @@ Empower non-admin gallery owners by integrating album management controls direct
 
 Initial concept used an ARIA tabbed interface. During integration with varied themes (e.g. Bootstrap Darkroom) we simplified to a progressive enhancement that injects a single structured fieldset section ("My Galleries") into the existing profile form. This reduced fragility, avoided layout clashes, and preserved full functionality with JavaScript disabled (the section simply does not appear when no albums qualify).
 
-### `Status` (As of 2026-06-22)
+### `Status` (As of 2026-06-25)
 
-Phase 1 functionality is fully implemented and validated, the inherited-ownership hardening phase is now in place as Phase 1.5, the first Phase 2 representative-image slice is shipped, and the first Phase 3 owner public profile slice is now live. The plugin now covers profile and UCP album editing, owner-only album privacy toggling on public and mobile album pages, current Community ownership schemas, inherited ownership for descendant albums below a Community-owned root, album-level selected-user sharing, representative image selection from album photos, a separate `My Profile` UCP editor, public owner-profile rendering on album pages, multilingual rollout for the active gallery languages, local Community upload-target restriction and privacy-UI simplification patches in the runtime, and focused PHPUnit plus Cypress regression coverage including fallback limited-mode and no-qualifying-albums edge cases.
+Phase 1 functionality is fully implemented and validated, the inherited-ownership hardening phase is now in place as Phase 1.5, the first Phase 2 representative-image slice is shipped, and the current Phase 3 owner public profile slice now includes the broader profile vocabulary, municipality-backed city selection, public contact actions, weekday availability scheduling, and the locale-stable guest-visible contact fix. The plugin now covers profile and UCP album editing, owner-only album privacy toggling on public and mobile album pages, current Community ownership schemas, inherited ownership for descendant albums below a Community-owned root, album-level selected-user sharing, representative image selection from album photos, a separate `My Profile` UCP editor, public owner-profile rendering on album pages, municipality-backed city options with Bratislava/Košice district handling, multilingual rollout for the active gallery languages, local Community upload-target restriction and privacy-UI simplification patches in the runtime, and focused PHPUnit plus Cypress regression coverage including fallback limited-mode and no-qualifying-albums edge cases.
 
 ### Implementation Summary
 
@@ -45,9 +45,10 @@ Delivered components & behaviors:
 17. **Representative Image MVP**: The UCP editor now exposes a hidden `representative_picture_id`, shows the current cover image when present, lazy-loads eligible album photos through `core_privacy_toggle.album.images`, and lets the owner set or clear the native Piwigo `categories.representative_picture_id` field.
 18. **Community Upload Target Restriction (Local Integration Patch)**: The local Community runtime now clamps non-admin user-album upload and create scopes to the current user's own album tree, so `/add_photos` offers only that user's root and descendants instead of unrelated user roots.
 19. **Community Photo Privacy UI Hidden (Local Integration Patch)**: The local Community `edit_photos` screen no longer offers the bulk `Who can see these photos? (Privacy level)` action, because the supported privacy model for this audience is album-level visibility plus selected-user sharing from CPT.
-20. **Owner Public Profile MVP**: CPT now stores owner-profile metadata in a dedicated table, validates and saves it through `core_privacy_toggle.owner_profile.update`, exposes a standalone `My Profile` UCP section, and renders a structured public profile block for the effective owner root album.
-21. **Testing**: Comprehensive PHPUnit coverage now spans ownership, privacy transitions, sharing permission sync, inherited descendant ownership, explicit child-owner override, representative-image assignment, owner-profile persistence and validation, webservice updates, and public rendering payload generation. Browser coverage includes the descendant toggle flow, Smart Pocket rendering, Community upload-target scoping, the representative-image live picker flow, owner-profile save/render coverage, end-to-end selected-user sharing, the theme-driven AJAX album-save path, the fallback limited-mode banner path, and the no-qualifying-albums hidden-state path.
-22. **CI**: GitHub Actions workflows for PHPUnit and Cypress integrated.
+20. **Owner Public Profile**: CPT now stores owner-profile metadata in a dedicated table, validates and saves it through `core_privacy_toggle.owner_profile.update`, exposes a standalone `My Profile` UCP section, and renders a structured public profile block for the effective owner root album. The shipped field model now includes nationality, age, city, measures, breasts, eyes, hair, private parts, tattoo, piercing, experience, `I offer`, other girls, services for, languages spoken, a separate contact subsection with one shared number plus per-channel Phone/SMS/WhatsApp visibility toggles, and weekday availability ranges including an `Unavailable` state.
+21. **Public Contact & Availability UI**: The public profile block now renders large icon-based contact actions for enabled channels, keeps those actions visible for guests regardless of the viewer locale by relying on persisted toggle ids rather than translated labels, and renders a separate weekday availability section using `from`/`to` hour selectors in the editor.
+22. **Testing**: Comprehensive PHPUnit coverage now spans ownership, privacy transitions, sharing permission sync, inherited descendant ownership, explicit child-owner override, representative-image assignment, owner-profile persistence and validation, city-option normalization, contact-link rendering, locale-stable guest contact visibility, availability persistence, webservice updates, and public rendering payload generation. Browser coverage includes the descendant toggle flow, Smart Pocket rendering, Community upload-target scoping, the representative-image live picker flow, owner-profile save/render coverage, end-to-end selected-user sharing, the theme-driven AJAX album-save path, the fallback limited-mode banner path, and the no-qualifying-albums hidden-state path.
+23. **CI**: GitHub Actions workflows for PHPUnit and Cypress integrated.
 
 ### Remaining (Deferred) Items
 
@@ -56,7 +57,7 @@ Delivered components & behaviors:
 - Multi-browser CI matrix and code coverage reporting.
 - Optional migration path to normalize Community ownership metadata on legacy installs.
 - Optional derived tag-sync/search index for selected owner-profile fields.
-- Broader owner-profile vocabulary expansion beyond the current MVP field set.
+- Optional normalization, search sync, or richer discovery features for selected owner-profile fields.
 
 ### Accessibility
 
@@ -413,11 +414,11 @@ This is still the cleanest next CPT feature because it is already album-scoped a
   - negative case: image from another album rejected
   - edge case: clearing representative image restores default behavior
 
-## CPT Extension: Owner Public Profile Metadata (Implemented 2026-06-20)
+## CPT Extension: Owner Public Profile Metadata (Implemented 2026-06-20, expanded 2026-06-25)
 
 ### Scrum-XP Stage
 
-This section started as the Phase 3 design blueprint and now documents the first implemented owner-profile slice: CPT-owned storage and validation, separate UCP editing, and public album-page rendering.
+This section started as the Phase 3 design blueprint and now documents the shipped owner-profile slice: CPT-owned storage and validation, separate UCP editing, municipality-backed city selection, and public album-page rendering including clickable contact actions.
 
 ### `Action`
 
@@ -425,16 +426,21 @@ Allow an album owner to maintain a structured public profile from the UCP, using
 
 ### Problem Statement
 
-The current album description is free text. It can hold a simple caption such as `Pokusny popis`, but it is not a good long-term model for structured public profile attributes such as nationality, age, location, measurements, eyes, hair, or availability.
+The current album description is free text. It can hold a simple caption such as `Pokusny popis`, but it is not a good long-term model for structured public profile attributes such as nationality, age, city, measures, eyes, hair, availability-style descriptors, or public contact channels.
 
 The desired public UI is a structured table:
 
 ```text
 Nationality     Ukrainian
 Age             24 rokov
-Measurements    160 cm, 55 kg, chodidlo 37 EU
+City            Bratislava II
+Measures        160 cm, 55 kg, chodidlo 37 EU
 Eyes            modré oči
 Hair            hnedé vlasy
+
+Contact
+[Phone calls] [SMS] [WhatsApp]
+0918095964
 ```
 
 This table should be edited by the album owner in the UCP, displayed by the custom Bootstrap Darkroom theme on the public album page, and optionally mapped to tags later for native Piwigo search.
@@ -498,7 +504,7 @@ Implementation note:
 
 ### Data Model
 
-Current MVP storage: a small CPT-owned table.
+Current storage: a small CPT-owned table.
 
 ```sql
 CREATE TABLE piwigo_cpt_owner_profile (
@@ -519,28 +525,57 @@ Rules:
 
 - `root_album_id` identifies the effective owner/root album.
 - `owner_user_id` records the user allowed to edit the profile.
-- `field_key` identifies the public profile field, for example `nationality`, `age`, `measurements`, `eyes`, or `hair`.
+- `field_key` identifies the public profile field, for example `nationality`, `city`, `measures`, `i_offer`, or `contact_whatsapp`.
 - `tag_id` is used when the value comes from Tag Groups vocabulary.
 - `value_text` is used for free-text or composed fields.
-- The MVP may mix controlled select fields and safe free-text fields.
+- The shipped model mixes controlled select fields, built-in yes/no selectors, controlled multi-select fields, and safe free-text fields.
 
 ### Field Model
 
-Implemented MVP field set:
+Implemented field set:
 
 ```text
-nationality      Tag Groups value
+nationality      controlled vocabulary
 age              free text
-measurements     free text
-eyes             Tag Groups value
-hair             Tag Groups value
+city             controlled single-select sourced from municipality seed data
+measures         free text
+breasts          controlled vocabulary
+eyes             free text
+hair             free text
+private_parts    controlled vocabulary
+tattoo           controlled yes/no
+piercing         controlled yes/no
+experience       controlled vocabulary
+i_offer          controlled vocabulary (`Privát` / `Private flat`, `Escort`)
+other_girls      controlled vocabulary
+services_for     controlled multi-select
+i_speak          controlled multi-select
+
+contact_number   free text
+contact_phone    controlled yes/no
+contact_sms      controlled yes/no
+contact_whatsapp controlled yes/no
+
+availability_monday    weekday availability range
+availability_tuesday   weekday availability range
+availability_wednesday weekday availability range
+availability_thursday  weekday availability range
+availability_friday    weekday availability range
+availability_saturday  weekday availability range
+availability_sunday    weekday availability range
 ```
 
-Deferred candidates such as `location`, `availability`, or normalized search fields can be added later without changing the overall model.
+The city selector is populated from CPT municipality seed data derived from `.github/obce-kraje.md`, including continuation-row handling for district variants such as `Bratislava II` and `Košice IV`.
 
 ### Tag Groups Integration
 
-Tag Groups should provide allowed values grouped by semantic category.
+Controlled vocabularies are split by source:
+
+- Tag Groups remain the preferred source where a semantic group exists.
+- Built-in CPT option lists cover stable yes/no and closed enumerations.
+- Municipality-backed city options are sourced from CPT seed data derived from `.github/obce-kraje.md`.
+
+Tag Groups should provide allowed values grouped by semantic category where configured.
 
 Examples:
 
@@ -560,13 +595,17 @@ Hair
 - brown
 - black
 
-Availability
-- available now
-- unavailable
-- by appointment
+Experience
+- beginner
+- experienced
+
+Services for
+- men
+- women
+- couples
 ```
 
-CPT should read the available groups and values and build UCP select controls for controlled fields. If Tag Groups or its configured vocabulary is missing, CPT should degrade gracefully by hiding the affected controlled fields rather than blocking the whole profile editor.
+CPT should read the available groups and values and build UCP select controls for controlled fields. If Tag Groups or its configured vocabulary is missing, CPT should degrade gracefully by hiding the affected controlled fields rather than blocking the whole profile editor. City options do not depend on Tag Groups and continue to work from the municipality seed file when available.
 
 ### Public Display Contract
 
@@ -576,6 +615,7 @@ Suggested variables:
 
 ```php
 $template->assign('CPT_OWNER_PROFILE_ROWS', $rows);
+$template->assign('CPT_OWNER_PROFILE_CONTACTS', $contacts);
 $template->assign('CPT_OWNER_PROFILE_TABLE', $rendered_html);
 ```
 
@@ -593,7 +633,7 @@ Implementation note:
 
 - Generic themes may still rely on normal plugin content slots.
 - The local Bootstrap Darkroom override owns final placement: albums first, then description, then the CPT-rendered profile block on desktop; first album, then description, then profile, then remaining albums on mobile.
-- The public profile block currently renders as a semantic table without a separate visible `Public Profile` heading.
+- The public profile block currently renders as a semantic table plus a separate icon-based contact-actions block when at least one public contact channel is enabled, followed by a distinct availability section when any weekday range is configured.
 
 ### Code Touchpoints
 
@@ -643,7 +683,13 @@ Payload concept:
   "fields": {
     "nationality": { "tag_id": 55 },
     "age": { "value_text": "24 rokov" },
-    "measurements": { "value_text": "160 cm, 55 kg, chodidlo 37 EU" }
+    "city": { "tag_id": 2013 },
+    "measures": { "value_text": "160 cm, 55 kg, chodidlo 37 EU" },
+    "i_speak": { "tag_ids": [301, 302] },
+    "contact_number": { "value_text": "+421918095964" },
+    "contact_phone": { "tag_id": 1 },
+    "contact_sms": { "tag_id": 1 },
+    "contact_whatsapp": { "tag_id": 1 }
   },
   "pwg_token": "..."
 }
@@ -654,9 +700,11 @@ Validation:
 - Current user must effectively own the root album.
 - Submitted `root_album_id` must resolve to a root album owned by the current user.
 - Field keys must be whitelisted.
-- Tag ids must exist and belong to the configured Tag Groups vocabulary for that field.
+- Tag ids must resolve to the configured controlled vocabulary for that field, including municipality-backed city options and multi-select fields where applicable.
 - Free text must be trimmed, length-limited, and escaped on output.
 - Empty values remove or hide the field row.
+- Public contact links must be derived from normalized phone digits rather than trusting raw output formatting.
+- Public contact visibility must be derived from locale-stable persisted toggle ids so guest rendering does not depend on the viewer's translation context.
 - The owner-profile table should auto-create safely on first use if the plugin upgrade path has not yet created it in the runtime database.
 
 ### Security Rules
@@ -665,6 +713,7 @@ Validation:
 - Never trust submitted album ids, field keys, or tag ids.
 - Only whitelisted fields may be saved.
 - Public output must be escaped unless the value is generated from trusted controlled vocabulary.
+- Public contact href values must be normalized server-side before generating `tel:`, `sms:`, or `https://wa.me/` links.
 - Owners must be able to remove a field value.
 - Admin/webmaster override can be considered later, but the MVP should focus on owner self-service.
 
@@ -673,7 +722,11 @@ Validation:
 - The UCP editor should use native form controls.
 - Every field must have a visible label.
 - Controlled vocabulary choices should use native `<select>` controls.
+- Multi-value choices should use native multi-select controls.
+- The contact subsection should remain part of the same `My Profile` block, separated visually but not split into a different save surface.
+- The availability subsection should remain in the same `My Profile` block and use native `from` / `to` select controls plus an explicit `Unavailable` option.
 - The public profile table should use semantic table markup or a definition-list style structure.
+- Public contact actions should be real links with clear visible labels or accessible icon-only labels.
 - If rendered as a table, use headers or clear row labels:
 
 ```html
@@ -689,8 +742,9 @@ Validation:
 
 ### PHPUnit Test Plan
 
-1. **Owner can save profile field**
-   - Given user owns root album, saving whitelisted field persists value.
+1. **Owner can save profile fields**
+
+- Given user owns root album, saving whitelisted text, controlled, and multi-select fields persists normalized values.
 
 2. **Non-owner cannot save profile field**
    - Given unrelated user submits root album id, no value is persisted.
@@ -701,8 +755,9 @@ Validation:
 4. **Invalid field key rejected**
    - Unknown field keys are ignored or rejected.
 
-5. **Invalid tag id rejected**
-   - Tag id outside configured Tag Groups vocabulary is not saved.
+5. **Invalid controlled option rejected**
+
+- An option id outside the configured controlled vocabulary is not saved.
 
 6. **Text is length-limited and escaped**
    - Long or HTML-like input is stored safely and rendered safely.
@@ -721,11 +776,27 @@ Validation:
 
 - Profile rows render after the description anchors managed by the Bootstrap Darkroom override, not in the original top plugin slot.
 
+11. **City options normalize correctly**
+
+- Municipality-derived city options include continuation-row districts such as `Bratislava II` and `Košice IV` rather than only the first district row.
+
+12. **Public contact links render only when enabled**
+
+- Shared contact number renders `tel:`, `sms:`, and WhatsApp links only for channels explicitly enabled in the saved profile.
+
+13. **Guest contact rendering stays locale-stable**
+
+- Contact actions remain visible for guests even when the profile was saved under a different translation context, because rendering keys off persisted toggle ids instead of localized `Yes` text.
+
+14. **Availability ranges render correctly**
+
+- Weekday availability rows render saved `from` / `to` values, and `Unavailable` days round-trip correctly through save, edit, and public display.
+
 ### Cypress / E2E Acceptance Scenarios
 
 1. Owner sees `My Profile` in UCP.
-2. Owner saves public profile fields and sees a confirmation.
-3. Visitor opens the owner's root album and sees the structured profile table.
+2. Owner saves public profile fields, including city and contact settings, and sees a confirmation.
+3. Visitor opens the owner's root album and sees the structured profile table plus any enabled public contact actions and configured weekday availability.
 4. Visitor does not see empty rows for missing values.
 5. Non-owner cannot edit another owner's public profile.
 6. Album without profile metadata still shows the normal album description fallback.
@@ -747,11 +818,11 @@ This should remain optional because profile metadata is album/owner data, while 
 ### Definition of Done
 
 - UCP shows `My Profile` for owners with a qualifying root album.
-- Owner can save and clear public profile fields.
+- Owner can save and clear public profile fields, including controlled multi-select values, optional public contact actions, and weekday availability ranges.
 - Non-owner cannot save profile fields.
 - Public root album page displays a structured table when profile metadata exists.
 - Normal album description fallback still works when no profile metadata exists.
-- Tag Groups vocabulary is used for controlled values or gracefully skipped when unavailable.
+- Controlled vocabulary sources are used where configured, municipality-backed city selection is available, and unsupported controlled fields are gracefully skipped when unavailable.
 - PHPUnit tests cover storage, validation, ownership, and rendering payload generation.
 - Manual verification confirms UCP save and public album-page rendering on the target Bootstrap Darkroom layout.
 

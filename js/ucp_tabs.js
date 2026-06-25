@@ -107,6 +107,36 @@
         continue;
       }
 
+      if (fieldType === "controlled_multi") {
+        var multiSelect = field.querySelector("select");
+        payload.fields[fieldKey] = {
+          tag_ids: multiSelect
+            ? Array.prototype.slice
+                .call(multiSelect.options)
+                .filter(function (option) {
+                  return option.selected;
+                })
+                .map(function (option) {
+                  return parseInt(option.value, 10);
+                })
+                .filter(function (value) {
+                  return !isNaN(value) && value > 0;
+                })
+            : [],
+        };
+        continue;
+      }
+
+      if (fieldType === "availability_range") {
+        var fromSelect = field.querySelector('select[data-role="from"]');
+        var toSelect = field.querySelector('select[data-role="to"]');
+        payload.fields[fieldKey] = {
+          from_value: fromSelect ? fromSelect.value : "",
+          to_value: toSelect ? toSelect.value : "",
+        };
+        continue;
+      }
+
       var input = field.querySelector("input, textarea");
       payload.fields[fieldKey] = {
         value_text: input ? input.value : "",

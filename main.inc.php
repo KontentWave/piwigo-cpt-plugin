@@ -38,6 +38,7 @@ define('CORE_PRIVACY_TOGGLE_PATH' ,   PHPWG_PLUGINS_PATH . CORE_PRIVACY_TOGGLE_I
 define('CORE_PRIVACY_TOGGLE_PUBLIC',  get_root_url() . 'plugins/' . CORE_PRIVACY_TOGGLE_ID . '/');
 define('CORE_PRIVACY_TOGGLE_ADMIN',   get_root_url() . 'admin.php?page=plugin-' . CORE_PRIVACY_TOGGLE_ID);
 if (!defined('CPT_OWNER_PROFILE_TABLE')) { define('CPT_OWNER_PROFILE_TABLE', $prefixeTable . 'cpt_owner_profile'); }
+if (!defined('CPT_MUNICIPALITY_TABLE')) { define('CPT_MUNICIPALITY_TABLE', $prefixeTable . 'cpt_municipality'); }
 // Debug flag (set to true only during development)
 if (!defined('CPT_DEBUG')) { define('CPT_DEBUG', false); }
 

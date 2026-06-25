@@ -26,6 +26,12 @@ class core_privacy_toggle_maintain extends PluginMaintain
     if (!pwg_query($query)) {
       $errors[] = 'CPT: failed to create owner profile table';
     }
+
+    if (!pwg_query(cpt_get_municipality_table_schema_sql())) {
+	  $errors[] = 'CPT: failed to create municipality table';
+	} elseif (!cpt_import_municipality_seed_data() && !cpt_should_skip_municipality_seed()) {
+	  $errors[] = 'CPT: failed to import municipality seed data';
+	}
   }
 
   /**
@@ -70,5 +76,6 @@ class core_privacy_toggle_maintain extends PluginMaintain
   function uninstall()
   {
     pwg_query('DROP TABLE IF EXISTS '.CPT_OWNER_PROFILE_TABLE);
+    pwg_query('DROP TABLE IF EXISTS '.CPT_MUNICIPALITY_TABLE);
   }
 }

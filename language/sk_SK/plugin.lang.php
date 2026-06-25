@@ -41,5 +41,20 @@ $lang['Clear cover image'] = 'Odstranit titulnu fotografiu';
 $lang['No cover image selected.'] = 'Nie je vybrata ziadna titulna fotografia.';
 $lang['Current cover image is unavailable.'] = 'Aktualna titulna fotografia nie je dostupna.';
 $lang['This gallery has no photos available for a cover image yet.'] = 'Tato galeria este nema ziadne fotografie vhodne pre titulnu fotografiu.';
+$lang['Private flat'] = 'Privát';
+$lang['Contact'] = 'Kontakt';
+$lang['Contact number'] = 'Kontaktné číslo';
+$lang['Phone calls'] = 'Telefonáty';
+$lang['Availability'] = 'Dostupnosť';
+$lang['From'] = 'Od';
+$lang['To'] = 'Do';
+$lang['Unavailable'] = 'Nedostupná';
+$lang['Monday'] = 'Pondelok';
+$lang['Tuesday'] = 'Utorok';
+$lang['Wednesday'] = 'Streda';
+$lang['Thursday'] = 'Štvrtok';
+$lang['Friday'] = 'Piatok';
+$lang['Saturday'] = 'Sobota';
+$lang['Sunday'] = 'Nedeľa';
 
 ?>

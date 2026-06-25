@@ -213,6 +213,8 @@ function cpt_attach_owner_profile_to_album_page(): void
 	}
 
 	$template->assign('CPT_OWNER_PROFILE_ROWS', $profile['rows']);
+	$template->assign('CPT_OWNER_PROFILE_CONTACTS', $profile['contacts'] ?? []);
+	$template->assign('CPT_OWNER_PROFILE_AVAILABILITY', $profile['availability'] ?? []);
 	$template->set_filename('cpt_owner_profile_table', realpath(CORE_PRIVACY_TOGGLE_PATH.'template/owner_profile_table.tpl'));
 	$html = $template->parse('cpt_owner_profile_table', true);
 	$template->assign('CPT_OWNER_PROFILE_TABLE', $html);
@@ -1120,6 +1122,199 @@ function cpt_fetch_owner_profile_rows(int $root_album_id, int $owner_user_id): a
 	return $rows;
 }
 
+function cpt_get_municipality_table_schema_sql(): string
+{
+	return 'CREATE TABLE IF NOT EXISTS '.CPT_MUNICIPALITY_TABLE." (
+	id int(11) NOT NULL AUTO_INCREMENT,
+	obec varchar(255) NOT NULL,
+	kraj varchar(255) NOT NULL,
+	PRIMARY KEY (id),
+	UNIQUE KEY obec_kraj (obec, kraj)
+)";
+}
+
+function cpt_municipality_table_exists(): bool
+{
+	$result = pwg_query("SHOW TABLES LIKE '".pwg_db_real_escape_string(CPT_MUNICIPALITY_TABLE)."'");
+	return (bool) ($result && pwg_db_fetch_row($result));
+}
+
+function cpt_should_skip_municipality_seed(): bool
+{
+	return defined('PHPUNIT_COMPOSER_INSTALL') || defined('__PHPUNIT_PHAR__');
+}
+
+function cpt_get_municipality_seed_file_path(): string
+{
+	return CORE_PRIVACY_TOGGLE_PATH.'.github/obce-kraje.md';
+}
+
+function cpt_municipality_table_has_rows(): bool
+{
+	$result = pwg_query('SELECT id FROM '.CPT_MUNICIPALITY_TABLE.' LIMIT 1');
+	return (bool) ($result && pwg_db_fetch_row($result));
+}
+
+function cpt_import_municipality_seed_data(): bool
+{
+	if (cpt_should_skip_municipality_seed()) {
+		return true;
+	}
+
+	$seed_path = cpt_get_municipality_seed_file_path();
+	if (!is_file($seed_path)) {
+		return false;
+	}
+
+	$lines = @file($seed_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+	if (!is_array($lines) || count($lines) < 2) {
+		return false;
+	}
+
+	$imported_any = false;
+	foreach ($lines as $index => $line) {
+		if ($index === 0) {
+			continue;
+		}
+
+		$parts = preg_split('/\t+/', trim($line));
+		if (!is_array($parts) || count($parts) < 3) {
+			continue;
+		}
+
+		$obec = trim((string) $parts[0]);
+		$kraj = trim((string) $parts[2]);
+		if ($obec === '' || $kraj === '') {
+			continue;
+		}
+
+		$sql = sprintf(
+			"INSERT IGNORE INTO %s (obec, kraj) VALUES ('%s', '%s')",
+			CPT_MUNICIPALITY_TABLE,
+			pwg_db_real_escape_string($obec),
+			pwg_db_real_escape_string($kraj)
+		);
+		$imported_any = (bool) pwg_query($sql) || $imported_any;
+	}
+
+	return $imported_any;
+}
+
+function cpt_ensure_municipality_table(): bool
+{
+	if (!cpt_municipality_table_exists() && pwg_query(cpt_get_municipality_table_schema_sql()) === false) {
+		return false;
+	}
+
+	if (!cpt_municipality_table_has_rows()) {
+		return cpt_import_municipality_seed_data();
+	}
+
+	return true;
+}
+
+function cpt_get_owner_profile_city_options(): array
+{
+	$options = cpt_get_owner_profile_city_options_from_seed_file();
+	if (!empty($options)) {
+		return $options;
+	}
+
+	if (!cpt_ensure_municipality_table()) {
+		return [];
+	}
+
+	$result = pwg_query('SELECT id, obec FROM '.CPT_MUNICIPALITY_TABLE.' ORDER BY obec ASC, kraj ASC');
+	if (!$result) {
+		return [];
+	}
+
+	$options = [];
+	while ($row = pwg_db_fetch_assoc($result)) {
+		$option_id = isset($row['id']) ? (int) $row['id'] : 0;
+		$option_label = trim((string) ($row['obec'] ?? ''));
+		if ($option_id <= 0 || $option_label === '') {
+			continue;
+		}
+
+		$options[$option_id] = $option_label;
+	}
+
+	return $options;
+}
+
+function cpt_get_owner_profile_city_options_from_seed_file(): array
+{
+	$seed_path = cpt_get_municipality_seed_file_path();
+	if (!is_file($seed_path)) {
+		return [];
+	}
+
+	$lines = @file($seed_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+	if (!is_array($lines) || count($lines) < 2) {
+		return [];
+	}
+
+	$labels = [];
+	$last_obec = '';
+	$last_kraj = '';
+	foreach ($lines as $index => $line) {
+		if ($index === 0) {
+			continue;
+		}
+
+		$parts = explode("\t", rtrim($line, "\r\n"));
+		if (!is_array($parts)) {
+			continue;
+		}
+
+		$parts = array_pad($parts, 3, '');
+
+		$obec = trim((string) $parts[0]);
+		$okres = trim((string) $parts[1]);
+		$kraj = trim((string) $parts[2]);
+
+		if ($obec === '' && $last_obec !== '') {
+			$obec = $last_obec;
+		}
+
+		if ($kraj === '' && $last_kraj !== '') {
+			$kraj = $last_kraj;
+		}
+
+		if ($obec === '') {
+			continue;
+		}
+
+		$last_obec = $obec;
+		$last_kraj = $kraj;
+
+		$label = $obec;
+		if ($obec === 'Bratislava' && preg_match('/^Bratislava\s+[IVX]+$/u', $okres)) {
+			$label = $okres;
+		} elseif ($obec === 'Košice' && preg_match('/^Košice\s+[IVX]+$/u', $okres)) {
+			$label = $okres;
+		}
+
+		$labels[$label] = true;
+	}
+
+	$option_labels = array_keys($labels);
+	if (empty($option_labels)) {
+		return [];
+	}
+
+	natcasesort($option_labels);
+	$options = [];
+	$next_id = 1;
+	foreach ($option_labels as $label) {
+		$options[$next_id] = $label;
+		$next_id++;
+	}
+
+	return $options;
+}
+
 function cpt_get_owner_profile_table_schema_sql(): string
 {
 	return 'CREATE TABLE IF NOT EXISTS '.CPT_OWNER_PROFILE_TABLE." (
@@ -1184,23 +1379,41 @@ function cpt_get_owner_profile_editor_data(int $user_id): ?array
 	foreach ($schema as $field_key => $definition) {
 		$field_type = (string) ($definition['type'] ?? 'text');
 		$field_row = $rows[$field_key] ?? null;
+		$options = [];
+		$selected_tag_ids = [];
+		$resolved_tag_id = is_array($field_row) && !empty($field_row['tag_id']) ? (int) $field_row['tag_id'] : 0;
 		$field = [
 			'key' => (string) $field_key,
 			'label' => (string) ($definition['label'] ?? $field_key),
 			'type' => $field_type,
 			'max_length' => isset($definition['max_length']) ? (int) $definition['max_length'] : null,
 			'value_text' => is_array($field_row) ? (string) ($field_row['value_text'] ?? '') : '',
-			'tag_id' => is_array($field_row) && !empty($field_row['tag_id']) ? (int) $field_row['tag_id'] : 0,
+			'tag_id' => $resolved_tag_id,
+			'selected_tag_ids' => [],
 			'options' => [],
+			'from_value' => '',
+			'to_value' => '',
 		];
 
-		if ($field_type === 'controlled') {
+		if ($field_type === 'controlled' || $field_type === 'controlled_multi') {
 			$options = cpt_get_owner_profile_controlled_options((string) $field_key);
 			if (empty($options)) {
 				continue;
 			}
 
 			$field['options'] = $options;
+
+			if ($field_type === 'controlled') {
+				if ($field['tag_id'] <= 0 && $field['value_text'] !== '') {
+					$field['tag_id'] = cpt_resolve_owner_profile_option_id_from_value($options, $field['value_text']);
+				}
+			} else {
+				$selected_tag_ids = cpt_resolve_owner_profile_multi_option_ids_from_value($options, $field['value_text']);
+				$field['selected_tag_ids'] = $selected_tag_ids;
+			}
+		} elseif ($field_type === 'availability_range') {
+			$field['options'] = cpt_get_owner_profile_availability_time_options();
+			[$field['from_value'], $field['to_value']] = cpt_parse_owner_profile_availability_range($field['value_text']);
 		}
 
 		$fields[] = $field;
@@ -1239,8 +1452,25 @@ function cpt_get_owner_profile_public_data_for_album(int $album_id): ?array
 	}
 
 	$rows = [];
+	$contacts = [];
+	$availability = [];
+	$contact_number = trim((string) ($saved_rows['contact_number']['value_text'] ?? ''));
+	$normalized_contact_number = cpt_normalize_public_contact_number($contact_number);
 	foreach (cpt_get_owner_profile_field_schema() as $field_key => $definition) {
+		if (str_starts_with((string) $field_key, 'contact_')) {
+			continue;
+		}
+
 		if (empty($saved_rows[$field_key]['value_text'])) {
+			continue;
+		}
+
+		if (cpt_is_owner_profile_availability_field((string) $field_key)) {
+			$availability[] = [
+				'key' => (string) $field_key,
+				'label' => (string) ($definition['label'] ?? $field_key),
+				'value_text' => (string) $saved_rows[$field_key]['value_text'],
+			];
 			continue;
 		}
 
@@ -1251,7 +1481,37 @@ function cpt_get_owner_profile_public_data_for_album(int $album_id): ?array
 		];
 	}
 
-	if (empty($rows)) {
+	if ($contact_number !== '' && $normalized_contact_number !== '') {
+		if (cpt_is_public_contact_enabled($saved_rows, 'contact_phone')) {
+			$contacts[] = [
+				'key' => 'phone',
+				'label' => l10n('Phone calls'),
+				'display_value' => $contact_number,
+				'href' => 'tel:'.$normalized_contact_number,
+			];
+		}
+
+		if (cpt_is_public_contact_enabled($saved_rows, 'contact_sms')) {
+			$contacts[] = [
+				'key' => 'sms',
+				'label' => l10n('SMS'),
+				'display_value' => $contact_number,
+				'href' => 'sms:'.$normalized_contact_number,
+			];
+		}
+
+		$whatsapp_number = cpt_normalize_public_whatsapp_number($contact_number);
+		if ($whatsapp_number !== '' && cpt_is_public_contact_enabled($saved_rows, 'contact_whatsapp')) {
+			$contacts[] = [
+				'key' => 'whatsapp',
+				'label' => l10n('WhatsApp'),
+				'display_value' => $contact_number,
+				'href' => 'https://wa.me/'.$whatsapp_number,
+			];
+		}
+	}
+
+	if (empty($rows) && empty($contacts) && empty($availability)) {
 		return null;
 	}
 
@@ -1259,7 +1519,101 @@ function cpt_get_owner_profile_public_data_for_album(int $album_id): ?array
 		'root_album_id' => (int) $root_album_id,
 		'owner_user_id' => (int) $owner_user_id,
 		'rows' => $rows,
+		'contacts' => $contacts,
+		'availability' => $availability,
 	];
+}
+
+function cpt_parse_owner_profile_availability_range(string $value): array
+{
+	$value = trim($value);
+	if ($value === l10n('Unavailable')) {
+		return ['unavailable', ''];
+	}
+
+	if ($value === '' || !str_contains($value, ' - ')) {
+		return ['', ''];
+	}
+
+	[$from, $to] = explode(' - ', $value, 2);
+	return [trim($from), trim($to)];
+}
+
+function cpt_is_public_contact_enabled(array $saved_rows, string $field_key): bool
+{
+	if (empty($saved_rows[$field_key]) || !is_array($saved_rows[$field_key])) {
+		return false;
+	}
+
+	$row = $saved_rows[$field_key];
+	if (isset($row['tag_id']) && $row['tag_id'] !== null) {
+		return (int) $row['tag_id'] === 1;
+	}
+
+	$value_text = trim((string) ($row['value_text'] ?? ''));
+	if ($value_text === '') {
+		return false;
+	}
+
+	$options = cpt_get_owner_profile_controlled_options($field_key);
+	if (!empty($options)) {
+		return cpt_resolve_owner_profile_option_id_from_value($options, $value_text) === 1;
+	}
+
+	return $value_text === l10n('Yes');
+}
+
+function cpt_normalize_public_contact_number(string $value): string
+{
+	$value = trim($value);
+	if ($value === '') {
+		return '';
+	}
+
+	$has_plus = str_starts_with($value, '+');
+	$digits = preg_replace('/[^0-9]/', '', $value) ?? '';
+	if ($digits === '') {
+		return '';
+	}
+
+	return $has_plus ? '+'.$digits : $digits;
+}
+
+function cpt_normalize_public_whatsapp_number(string $value): string
+{
+	return preg_replace('/[^0-9]/', '', $value) ?? '';
+}
+
+function cpt_resolve_owner_profile_option_id_from_value(array $options, string $value_text): int
+{
+	foreach ($options as $option_id => $option_label) {
+		if ((string) $option_label === $value_text) {
+			return (int) $option_id;
+		}
+	}
+
+	return 0;
+}
+
+function cpt_resolve_owner_profile_multi_option_ids_from_value(array $options, string $value_text): array
+{
+	if ($value_text === '') {
+		return [];
+	}
+
+	$selected_labels = array_filter(array_map('trim', explode(',', $value_text)), static fn(string $value): bool => $value !== '');
+	if (empty($selected_labels)) {
+		return [];
+	}
+
+	$selected_ids = [];
+	foreach ($options as $option_id => $option_label) {
+		if (in_array((string) $option_label, $selected_labels, true)) {
+			$selected_ids[] = (int) $option_id;
+		}
+	}
+
+	return $selected_ids;
 }
 
 function cpt_normalize_owner_profile_text(string $field_key, string $value): string
@@ -1285,7 +1639,9 @@ function cpt_validate_owner_profile_field(string $field_key, array $field_payloa
 		return null;
 	}
 
-	if (($definition['type'] ?? 'text') === 'controlled') {
+	$field_type = (string) ($definition['type'] ?? 'text');
+
+	if ($field_type === 'controlled') {
 		$tag_id = isset($field_payload['tag_id']) ? (int) $field_payload['tag_id'] : 0;
 		if ($tag_id <= 0) {
 			return ['delete' => true];
@@ -1300,6 +1656,60 @@ function cpt_validate_owner_profile_field(string $field_key, array $field_payloa
 			'delete' => false,
 			'tag_id' => $tag_id,
 			'value_text' => (string) $options[$tag_id],
+		];
+	}
+
+	if ($field_type === 'controlled_multi') {
+		$tag_ids = $field_payload['tag_ids'] ?? [];
+		if (!is_array($tag_ids)) {
+			$tag_ids = [$tag_ids];
+		}
+
+		$options = cpt_get_owner_profile_controlled_options($field_key);
+		$labels = [];
+		foreach ($tag_ids as $tag_id) {
+			$tag_id = (int) $tag_id;
+			if ($tag_id > 0 && isset($options[$tag_id])) {
+				$labels[] = (string) $options[$tag_id];
+			}
+		}
+
+		$labels = array_values(array_unique($labels));
+		if (empty($labels)) {
+			return ['delete' => true];
+		}
+
+		return [
+			'delete' => false,
+			'tag_id' => null,
+			'value_text' => implode(', ', $labels),
+		];
+	}
+
+	if ($field_type === 'availability_range') {
+		$from_value = trim((string) ($field_payload['from_value'] ?? ''));
+		$to_value = trim((string) ($field_payload['to_value'] ?? ''));
+		if ($from_value === '' && $to_value === '') {
+			return ['delete' => true];
+		}
+
+		$options = cpt_get_owner_profile_availability_time_options();
+		if ($from_value === 'unavailable') {
+			return [
+				'delete' => false,
+				'tag_id' => null,
+				'value_text' => l10n('Unavailable'),
+			];
+		}
+
+		if ($from_value === '' || $to_value === '' || !isset($options[$from_value]) || !isset($options[$to_value]) || $to_value === 'unavailable') {
+			return null;
+		}
+
+		return [
+			'delete' => false,
+			'tag_id' => null,
+			'value_text' => $from_value.' - '.$to_value,
 		];
 	}
 
