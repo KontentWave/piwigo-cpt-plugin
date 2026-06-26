@@ -93,7 +93,8 @@ function cpt_prepare_album_page_toggle(): void
 	$album_id = (int) $category['id'];
 	$user_id = (int) ($user['id'] ?? 0);
 	$owns_album = $user_id > 0 && cpt_album_is_owned_by($album_id, $user_id);
-	$has_public_profile = cpt_get_owner_profile_public_data_for_album($album_id) !== null;
+	$has_public_profile = cpt_should_display_owner_profile_for_album($album_id)
+		&& cpt_get_owner_profile_public_data_for_album($album_id) !== null;
 	if (!$owns_album && !$has_public_profile) {
 		return;
 	}
@@ -204,6 +205,10 @@ function cpt_attach_owner_profile_to_album_page(): void
 
 	$category = cpt_get_current_album_page_category();
 	if ($category === null) {
+		return;
+	}
+
+	if (!cpt_should_display_owner_profile_for_album((int) $category['id'])) {
 		return;
 	}
 
@@ -1077,6 +1082,20 @@ function cpt_get_effective_owner_root_album_id_for_user(int $user_id): ?int
 	}
 
 	return null;
+}
+
+function cpt_should_display_owner_profile_for_album(int $album_id): bool
+{
+	if ($album_id <= 0) {
+		return false;
+	}
+
+	$root_album_id = cpt_get_effective_owner_root_album_id_for_album($album_id);
+	if ($root_album_id === null) {
+		return false;
+	}
+
+	return $album_id === $root_album_id;
 }
 
 function cpt_get_effective_owner_root_album_data(int $user_id): ?array

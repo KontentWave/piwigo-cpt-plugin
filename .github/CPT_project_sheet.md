@@ -609,7 +609,7 @@ CPT should read the available groups and values and build UCP select controls fo
 
 ### Public Display Contract
 
-CPT should assign a prepared public profile payload to Smarty when the current album is an effective owner root album or a descendant whose owner root should provide the profile.
+CPT should assign a prepared public profile payload to Smarty only when the current album is the effective owner root album.
 
 Suggested variables:
 
