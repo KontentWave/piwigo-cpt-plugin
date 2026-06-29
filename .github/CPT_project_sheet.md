@@ -140,6 +140,7 @@ Still desired in future Cypress coverage:
 - Fallback may be replaced by native ownership once Community (or another plugin) populates a supported ownership column.
 - Clearing template cache or hard-refresh may be needed after deploying updated JS or template partials.
 - Smart Pocket support depends on JS insertion because that theme does not render `PLUGIN_INDEX_CONTENT_BEGIN` on album pages.
+- Bootstrap Darkroom owner-profile placement now depends on early Smarty assignment rather than top-slot injection, because the mobile insert point lives inside `mainpage_categories.tpl` before the later desktop render path runs.
 - Browser automation coverage should include at least one Smart Pocket/mobile pass because album-page toggle rendering depends on a JS insertion shim rather than the standard plugin slot.
 
 ### Future Considerations
@@ -638,6 +639,29 @@ Implementation note:
 - The local Bootstrap Darkroom override owns final placement: albums first, then description, then the rendered profile block on desktop; first album, then description, then profile, then remaining albums on mobile.
 - The public profile block currently renders as a semantic table plus a separate icon-based contact-actions block when at least one public contact channel is enabled, followed by a distinct availability section when any weekday range is configured.
 
+#### Bootstrap Darkroom Integration Note
+
+Bootstrap Darkroom already had the responsive description anchors needed for the target layout, but owner-profile placement was previously split between theme rendering and plugin-side placement logic. The final contract moves placement ownership into the theme while keeping CPT responsible for computing and assigning the fallback payload.
+
+Final Bootstrap Darkroom contract:
+
+- `owner_profile` is the preferred long-term source through `OPP_OWNER_PROFILE_TABLE`.
+- CPT remains a compatibility fallback through `CPT_OWNER_PROFILE_TABLE`.
+- Bootstrap Darkroom must not depend on `PLUGIN_INDEX_CONTENT_BEGIN` for final owner-profile placement.
+- Outside Bootstrap Darkroom mode, CPT should still support generic themes through the normal plugin slot.
+
+Why the early assignment matters:
+
+- Desktop owner-profile rendering in Bootstrap Darkroom happens later in `index.tpl`.
+- Mobile owner-profile rendering happens inside `mainpage_categories.tpl`.
+- The rendered owner-profile table must therefore already be assigned before category rendering begins, otherwise the mobile description renders but the mobile owner-profile block disappears.
+
+Current CPT behavior for this integration:
+
+- `cpt_prepare_album_page_toggle()` prepares `CPT_OWNER_PROFILE_TABLE` early when a root-album public profile exists.
+- `cpt_attach_owner_profile_to_album_page()` still assigns the rendered table for generic themes, but in Bootstrap Darkroom mode it no longer appends the profile block to `PLUGIN_INDEX_CONTENT_BEGIN` and no longer injects that HTML into the JS placement payload.
+- CPT album-page JS remains limited to CPT-owned UI behavior such as the privacy quick-toggle.
+
 ### Code Touchpoints
 
 New or expanded CPT files:
@@ -779,6 +803,7 @@ Validation:
 
 - For Bootstrap Darkroom, CPT still assigns `CPT_OWNER_PROFILE_TABLE`, but does not append the public block to `PLUGIN_INDEX_CONTENT_BEGIN`.
 - The theme renders the profile block from its own responsive anchors after the description slots.
+- The rendered table is prepared early enough for `mainpage_categories.tpl` to consume it in mobile layout, not only later in the desktop render path.
 
 11. **City options normalize correctly**
 
