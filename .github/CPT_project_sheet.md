@@ -622,17 +622,20 @@ $template->assign('CPT_OWNER_PROFILE_TABLE', $rendered_html);
 Theme contract:
 
 ```smarty
-{if !empty($CPT_OWNER_PROFILE_TABLE)}
+{if !empty($OPP_OWNER_PROFILE_TABLE)}
+  {$OPP_OWNER_PROFILE_TABLE}
+{elseif !empty($CPT_OWNER_PROFILE_TABLE)}
   {$CPT_OWNER_PROFILE_TABLE}
-{elseif !empty($CONTENT_DESCRIPTION)}
-  {$CONTENT_DESCRIPTION}
 {/if}
 ```
 
 Implementation note:
 
 - Generic themes may still rely on normal plugin content slots.
-- The local Bootstrap Darkroom override owns final placement: albums first, then description, then the CPT-rendered profile block on desktop; first album, then description, then profile, then remaining albums on mobile.
+- Bootstrap Darkroom now renders the owner-profile payload directly from Smarty variables instead of relying on the original top plugin slot.
+- Bootstrap Darkroom prefers `OPP_OWNER_PROFILE_TABLE` and falls back to `CPT_OWNER_PROFILE_TABLE` during migration.
+- CPT should not inject the owner-profile HTML into the Bootstrap Darkroom JS placement payload anymore; Bootstrap Darkroom owns owner-profile placement from Smarty, while CPT keeps its album-page JS only for behaviors such as the privacy quick-toggle.
+- The local Bootstrap Darkroom override owns final placement: albums first, then description, then the rendered profile block on desktop; first album, then description, then profile, then remaining albums on mobile.
 - The public profile block currently renders as a semantic table plus a separate icon-based contact-actions block when at least one public contact channel is enabled, followed by a distinct availability section when any weekday range is configured.
 
 ### Code Touchpoints
@@ -774,7 +777,8 @@ Validation:
 
 10. **Bootstrap Darkroom placement works**
 
-- Profile rows render after the description anchors managed by the Bootstrap Darkroom override, not in the original top plugin slot.
+- For Bootstrap Darkroom, CPT still assigns `CPT_OWNER_PROFILE_TABLE`, but does not append the public block to `PLUGIN_INDEX_CONTENT_BEGIN`.
+- The theme renders the profile block from its own responsive anchors after the description slots.
 
 11. **City options normalize correctly**
 

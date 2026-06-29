@@ -99,6 +99,10 @@ function cpt_prepare_album_page_toggle(): void
 		return;
 	}
 
+	if ($has_public_profile) {
+		cpt_get_rendered_owner_profile_table_for_current_album();
+	}
+
 	$css_path = CORE_PRIVACY_TOGGLE_PATH.'template/album_page_toggle.css';
 	if (file_exists($css_path) && isset($template->cssLoader)) {
 		$template->func_combine_css(array(
@@ -118,6 +122,41 @@ function cpt_prepare_album_page_toggle(): void
 			'version' => filemtime($script_path),
 		));
 	}
+}
+
+function cpt_get_rendered_owner_profile_table_for_current_album(): ?string
+{
+	global $template;
+
+	$existing = method_exists($template, 'get_template_vars')
+		? $template->get_template_vars('CPT_OWNER_PROFILE_TABLE')
+		: null;
+	if (is_string($existing) && $existing !== '') {
+		return $existing;
+	}
+
+	$category = cpt_get_current_album_page_category();
+	if ($category === null) {
+		return null;
+	}
+
+	if (!cpt_should_display_owner_profile_for_album((int) $category['id'])) {
+		return null;
+	}
+
+	$profile = cpt_get_owner_profile_public_data_for_album((int) $category['id']);
+	if ($profile === null) {
+		return null;
+	}
+
+	$template->assign('CPT_OWNER_PROFILE_ROWS', $profile['rows']);
+	$template->assign('CPT_OWNER_PROFILE_CONTACTS', $profile['contacts'] ?? []);
+	$template->assign('CPT_OWNER_PROFILE_AVAILABILITY', $profile['availability'] ?? []);
+	$template->set_filename('cpt_owner_profile_table', realpath(CORE_PRIVACY_TOGGLE_PATH.'template/owner_profile_table.tpl'));
+	$html = $template->parse('cpt_owner_profile_table', true);
+	$template->assign('CPT_OWNER_PROFILE_TABLE', $html);
+
+	return $html;
 }
 
 /**
@@ -201,33 +240,15 @@ function cpt_attach_album_page_toggle(): void
 
 function cpt_attach_owner_profile_to_album_page(): void
 {
-	global $template;
-
-	$category = cpt_get_current_album_page_category();
-	if ($category === null) {
+	$html = cpt_get_rendered_owner_profile_table_for_current_album();
+	if ($html === null) {
 		return;
 	}
-
-	if (!cpt_should_display_owner_profile_for_album((int) $category['id'])) {
-		return;
-	}
-
-	$profile = cpt_get_owner_profile_public_data_for_album((int) $category['id']);
-	if ($profile === null) {
-		return;
-	}
-
-	$template->assign('CPT_OWNER_PROFILE_ROWS', $profile['rows']);
-	$template->assign('CPT_OWNER_PROFILE_CONTACTS', $profile['contacts'] ?? []);
-	$template->assign('CPT_OWNER_PROFILE_AVAILABILITY', $profile['availability'] ?? []);
-	$template->set_filename('cpt_owner_profile_table', realpath(CORE_PRIVACY_TOGGLE_PATH.'template/owner_profile_table.tpl'));
-	$html = $template->parse('cpt_owner_profile_table', true);
-	$template->assign('CPT_OWNER_PROFILE_TABLE', $html);
 
 	if (!cpt_theme_uses_album_page_js_profile_placement()) {
 		cpt_append_index_content_begin($html);
+		cpt_inject_album_page_assets($html);
 	}
-	cpt_inject_album_page_assets($html);
 }
 
 /**
