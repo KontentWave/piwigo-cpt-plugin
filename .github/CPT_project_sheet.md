@@ -14,7 +14,7 @@ Initial concept used an ARIA tabbed interface. During integration with varied th
 
 ### `Status` (As of 2026-06-25)
 
-Phase 1 functionality is fully implemented and validated, the inherited-ownership hardening phase is now in place as Phase 1.5, the first Phase 2 representative-image slice is shipped, and the current Phase 3 owner public profile slice now includes the broader profile vocabulary, municipality-backed city selection, public contact actions, weekday availability scheduling, and the locale-stable guest-visible contact fix. The plugin now covers profile and UCP album editing, owner-only album privacy toggling on public and mobile album pages, current Community ownership schemas, inherited ownership for descendant albums below a Community-owned root, album-level selected-user sharing, representative image selection from album photos, a separate `My Profile` UCP editor, public owner-profile rendering on album pages, municipality-backed city options with Bratislava/Košice district handling, multilingual rollout for the active gallery languages, local Community upload-target restriction and privacy-UI simplification patches in the runtime, and focused PHPUnit plus Cypress regression coverage including fallback limited-mode and no-qualifying-albums edge cases.
+Phase 1 functionality is fully implemented and validated, the inherited-ownership hardening phase is now in place as Phase 1.5, and the first Phase 2 representative-image slice is shipped. CPT now focuses on album and UCP album editing, owner-only album privacy toggling on public and mobile album pages, current Community ownership schemas, inherited ownership for descendant albums below a Community-owned root, album-level selected-user sharing, representative image selection from album photos, multilingual rollout for the active gallery languages, local Community upload-target restriction and privacy-UI simplification patches in the runtime, and focused PHPUnit plus Cypress regression coverage including fallback limited-mode and no-qualifying-albums edge cases. The legacy CPT profile implementation has been removed from active runtime ownership, and Owner Profile is the required home for `My Profile`, profile persistence, and public owner-profile rendering.
 
 ### Implementation Summary
 
@@ -45,9 +45,9 @@ Delivered components & behaviors:
 17. **Representative Image MVP**: The UCP editor now exposes a hidden `representative_picture_id`, shows the current cover image when present, lazy-loads eligible album photos through `core_privacy_toggle.album.images`, and lets the owner set or clear the native Piwigo `categories.representative_picture_id` field.
 18. **Community Upload Target Restriction (Local Integration Patch)**: The local Community runtime now clamps non-admin user-album upload and create scopes to the current user's own album tree, so `/add_photos` offers only that user's root and descendants instead of unrelated user roots.
 19. **Community Photo Privacy UI Hidden (Local Integration Patch)**: The local Community `edit_photos` screen no longer offers the bulk `Who can see these photos? (Privacy level)` action, because the supported privacy model for this audience is album-level visibility plus selected-user sharing from CPT.
-20. **Owner Public Profile**: CPT now stores owner-profile metadata in a dedicated table, validates and saves it through `core_privacy_toggle.owner_profile.update`, exposes a standalone `My Profile` UCP section, and renders a structured public profile block for the effective owner root album. The shipped field model now includes nationality, age, city, measures, breasts, eyes, hair, private parts, tattoo, piercing, experience, `I offer`, other girls, services for, languages spoken, a separate contact subsection with one shared number plus per-channel Phone/SMS/WhatsApp visibility toggles, and weekday availability ranges including an `Unavailable` state.
-21. **Public Contact & Availability UI**: The public profile block now renders large icon-based contact actions for enabled channels, keeps those actions visible for guests regardless of the viewer locale by relying on persisted toggle ids rather than translated labels, and renders a separate weekday availability section using `from`/`to` hour selectors in the editor.
-22. **Testing**: Comprehensive PHPUnit coverage now spans ownership, privacy transitions, sharing permission sync, inherited descendant ownership, explicit child-owner override, representative-image assignment, owner-profile persistence and validation, city-option normalization, contact-link rendering, locale-stable guest contact visibility, availability persistence, webservice updates, and public rendering payload generation. Browser coverage includes the descendant toggle flow, Smart Pocket rendering, Community upload-target scoping, the representative-image live picker flow, owner-profile save/render coverage, end-to-end selected-user sharing, the theme-driven AJAX album-save path, the fallback limited-mode banner path, and the no-qualifying-albums hidden-state path.
+20. **Owner Profile Extraction Completed**: CPT no longer ships active `My Profile` UI, public owner-profile rendering, or profile save endpoints. Those responsibilities now belong to the Owner Profile plugin.
+21. **Compatibility Boundary**: CPT keeps the album/privacy helper APIs that other plugins depend on, but no longer owns owner-profile field schemas, contact rendering, availability rendering, or municipality-backed city options.
+22. **Testing**: Comprehensive PHPUnit coverage now spans ownership, privacy transitions, sharing permission sync, inherited descendant ownership, explicit child-owner override, representative-image assignment, and the album/privacy helper surface that remains after profile extraction. Browser coverage includes the descendant toggle flow, Smart Pocket rendering, Community upload-target scoping, the representative-image live picker flow, end-to-end selected-user sharing, the theme-driven AJAX album-save path, the fallback limited-mode banner path, and the no-qualifying-albums hidden-state path.
 23. **CI**: GitHub Actions workflows for PHPUnit and Cypress integrated.
 
 ### Remaining (Deferred) Items
@@ -417,6 +417,8 @@ This is still the cleanest next CPT feature because it is already album-scoped a
 
 ## CPT Extension: Owner Public Profile Metadata (Implemented 2026-06-20, expanded 2026-06-25)
 
+Historical note: this section documents the removed CPT-owned profile implementation that existed before extraction to the Owner Profile plugin. The extraction section later in this document supersedes it for current runtime behavior.
+
 ### Scrum-XP Stage
 
 This section started as the Phase 3 design blueprint and now documents the shipped owner-profile slice: CPT-owned storage and validation, separate UCP editing, municipality-backed city selection, and public album-page rendering including clickable contact actions.
@@ -448,7 +450,7 @@ This table should be edited by the album owner in the UCP, displayed by the cust
 
 ### Design Decision
 
-Implement the editing and data model inside CPT, not inside the theme.
+Historical implementation decision: the first shipped profile slice lived inside CPT rather than inside the theme. That is no longer the long-term runtime boundary once Owner Profile is active.
 
 Responsibilities:
 
@@ -500,8 +502,9 @@ My Profile
 
 Implementation note:
 
-- The section is implemented as a separate native Piwigo profile block, not nested inside `My Galleries`.
-- The save path is the dedicated CPT webservice `core_privacy_toggle.owner_profile.update`.
+- The section was implemented as a separate native Piwigo profile block, not nested inside `My Galleries`.
+- The save path was the dedicated CPT webservice `core_privacy_toggle.owner_profile.update`.
+- In the current extraction transition, both of those CPT behaviors are fallback-only and are disabled when Owner Profile is active.
 
 ### Data Model
 
@@ -610,7 +613,7 @@ CPT should read the available groups and values and build UCP select controls fo
 
 ### Public Display Contract
 
-CPT should assign a prepared public profile payload to Smarty only when the current album is the effective owner root album.
+Legacy fallback contract: CPT assigns a prepared public profile payload to Smarty only when the current album is the effective owner root album and Owner Profile is not active.
 
 Suggested variables:
 
@@ -696,7 +699,7 @@ template/ucp_album_manager.tpl or profile injection logic
 
 ### Webservice / Save Path
 
-Implemented CPT webservice method:
+Legacy fallback CPT webservice method:
 
 ```text
 core_privacy_toggle.owner_profile.update
@@ -846,14 +849,14 @@ This should remain optional because profile metadata is album/owner data, while 
 
 ### Definition of Done
 
-- UCP shows `My Profile` for owners with a qualifying root album.
-- Owner can save and clear public profile fields, including controlled multi-select values, optional public contact actions, and weekday availability ranges.
+- The legacy CPT fallback can still show `My Profile` for owners with a qualifying root album when Owner Profile is absent.
+- The legacy CPT fallback can still save and clear public profile fields, including controlled multi-select values, optional public contact actions, and weekday availability ranges.
 - Non-owner cannot save profile fields.
-- Public root album page displays a structured table when profile metadata exists.
+- The legacy fallback public root album page displays a structured table when profile metadata exists and Owner Profile is absent.
 - Normal album description fallback still works when no profile metadata exists.
 - Controlled vocabulary sources are used where configured, municipality-backed city selection is available, and unsupported controlled fields are gracefully skipped when unavailable.
-- PHPUnit tests cover storage, validation, ownership, and rendering payload generation.
-- Manual verification confirms UCP save and public album-page rendering on the target Bootstrap Darkroom layout.
+- PHPUnit tests cover storage, validation, ownership, rendering payload generation, and the runtime disablement of the legacy CPT profile path when Owner Profile is active.
+- Manual verification confirms the fallback still works when needed and that Owner Profile takes over when active.
 
 ### Continuous Integration
 
@@ -1007,4 +1010,117 @@ The Core Privacy Toggle plugin demonstrates **exceptional production readiness**
 
 The plugin is ready for immediate production deployment with standard monitoring and backup procedures. No blocking issues identified during audit.
 
+# CPT `project_sheet.md` Extension: Owner Profile Extraction
+
+## Action
+
+Refactor CPT so it no longer owns owner profile data when the new Owner Profile plugin is active.
+
 ---
+
+## Current CPT Profile Responsibilities To Extract
+
+CPT currently:
+
+- defines profile fields
+- ensures profile storage table
+- loads editor data
+- validates and saves profile payloads
+- builds public profile rows, contacts, and availability
+- attaches "My Profile" block to Profile page
+- renders public owner profile table on album pages
+
+These responsibilities should move to the Owner Profile plugin.
+
+---
+
+## CPT Responsibilities After Refactor
+
+CPT remains the album/privacy engine:
+
+```text
+cpt_get_effective_owner_root_album_id_for_user()
+cpt_get_effective_owner_root_album_id_for_album()
+cpt_get_effective_owner_root_album_data()
+cpt_get_album_effective_owner_id()
+cpt_get_album_visibility_mode()
+cpt_get_album_shared_user_ids()
+cpt_update_album()
+cpt_make_owner_tree_private()
+```
+
+These helpers are still needed by Owner Profile, 2FA policy, and PLG.
+
+---
+
+## Integration With Owner Profile Plugin
+
+CPT previously detected Owner Profile plugin availability during the transition phase:
+
+```php
+function cpt_owner_profile_plugin_available(): bool
+{
+  return function_exists('opp_get_owner_profile_editor_data')
+    && function_exists('opp_get_owner_profile_public_data_for_album');
+}
+```
+
+That gate is now historical context only. After cleanup, CPT no longer ships the legacy profile path at all.
+
+During the transition phase:
+
+```text
+- do not assign UCP_OWNER_PROFILE from CPT
+- do not attach CPT My Profile block
+- do not render CPT owner profile table on album page
+```
+
+After cleanup:
+
+```text
+- CPT no longer provides legacy profile behavior
+- Owner Profile must own profile UI/data/display
+- CPT no longer ships the detection gate because there is no CPT profile path left to switch off
+```
+
+---
+
+## Migration Boundary
+
+CPT should not perform the migration itself.
+
+Owner Profile plugin owns:
+
+```text
+piwigo_cpt_owner_profile -> piwigo_owner_profile
+```
+
+CPT may keep the old source table untouched until a later cleanup release.
+
+Current cleanup note:
+
+- active runtime ownership has been removed from CPT
+- data migration and any final source-table retirement still belong to Owner Profile or a dedicated later migration step
+
+---
+
+## Test Plan
+
+1. CPT My Galleries still appears for album owner.
+2. CPT My Profile does not appear when Owner Profile plugin is active.
+3. If Owner Profile is absent, CPT no longer provides `My Profile`.
+4. Album quick privacy toggle still works.
+5. Shared album permissions still synchronize.
+6. Representative image flow still works.
+7. PLG can still call CPT album visibility helpers.
+8. CUG remains unaffected.
+
+---
+
+## Definition of Done
+
+- CPT profile UI/data paths are removed from active runtime ownership and delegated to Owner Profile.
+- Album/privacy behavior is unchanged.
+- Public profile table comes from Owner Profile plugin.
+- 2FA no longer queries CPT profile rows directly after migration.
+- CPT no longer contains live profile templates, profile save handlers, or profile field schema code.

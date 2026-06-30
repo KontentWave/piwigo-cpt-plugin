@@ -21,17 +21,6 @@ class core_privacy_toggle_maintain extends PluginMaintain
    */
   function install($plugin_version, &$errors=array())
   {
-    $query = cpt_get_owner_profile_table_schema_sql();
-
-    if (!pwg_query($query)) {
-      $errors[] = 'CPT: failed to create owner profile table';
-    }
-
-    if (!pwg_query(cpt_get_municipality_table_schema_sql())) {
-	  $errors[] = 'CPT: failed to create municipality table';
-	} elseif (!cpt_import_municipality_seed_data() && !cpt_should_skip_municipality_seed()) {
-	  $errors[] = 'CPT: failed to import municipality seed data';
-	}
   }
 
   /**
@@ -62,9 +51,6 @@ class core_privacy_toggle_maintain extends PluginMaintain
    */
   function update($old_version, $new_version, &$errors=array())
   {
-    // I (mistic100) chosed to handle install and update in the same method
-    // you are free to do otherwize
-    $this->install($new_version, $errors);
   }
 
   /**
@@ -75,7 +61,5 @@ class core_privacy_toggle_maintain extends PluginMaintain
    */
   function uninstall()
   {
-    pwg_query('DROP TABLE IF EXISTS '.CPT_OWNER_PROFILE_TABLE);
-    pwg_query('DROP TABLE IF EXISTS '.CPT_MUNICIPALITY_TABLE);
   }
 }

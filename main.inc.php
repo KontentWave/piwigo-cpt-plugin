@@ -37,8 +37,6 @@ define('CORE_PRIVACY_TOGGLE_ID',      basename(dirname(__FILE__)));
 define('CORE_PRIVACY_TOGGLE_PATH' ,   PHPWG_PLUGINS_PATH . CORE_PRIVACY_TOGGLE_ID . '/');
 define('CORE_PRIVACY_TOGGLE_PUBLIC',  get_root_url() . 'plugins/' . CORE_PRIVACY_TOGGLE_ID . '/');
 define('CORE_PRIVACY_TOGGLE_ADMIN',   get_root_url() . 'admin.php?page=plugin-' . CORE_PRIVACY_TOGGLE_ID);
-if (!defined('CPT_OWNER_PROFILE_TABLE')) { define('CPT_OWNER_PROFILE_TABLE', $prefixeTable . 'cpt_owner_profile'); }
-if (!defined('CPT_MUNICIPALITY_TABLE')) { define('CPT_MUNICIPALITY_TABLE', $prefixeTable . 'cpt_municipality'); }
 // Debug flag (set to true only during development)
 if (!defined('CPT_DEBUG')) { define('CPT_DEBUG', false); }
 
@@ -58,7 +56,6 @@ add_event_handler('loc_begin_profile', 'cpt_setup_ucp_tabs');
 add_event_handler('loc_begin_index', 'cpt_prepare_album_page_toggle');
 add_event_handler('loc_begin_index', 'cpt_handle_album_page_toggle');
 add_event_handler('loc_end_index', 'cpt_attach_album_page_toggle');
-add_event_handler('loc_end_index', 'cpt_attach_owner_profile_to_album_page');
 add_event_handler('ws_add_methods', 'cpt_add_ws_methods');
 // Safety net: if early POST handling somehow missed (theme workflow), run a late check
 

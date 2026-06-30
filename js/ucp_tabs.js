@@ -73,79 +73,6 @@
     return payload;
   }
 
-  function collectOwnerProfilePayload(profile) {
-    if (!profile) {
-      return null;
-    }
-
-    var rootAlbumId = profile.getAttribute("data-root-album-id");
-    if (!rootAlbumId) {
-      return null;
-    }
-
-    var fields = profile.querySelectorAll(
-      ".cpt-owner-profile-field[data-field-key]",
-    );
-    var payload = {
-      root_album_id: parseInt(rootAlbumId, 10),
-      fields: {},
-    };
-
-    for (var i = 0; i < fields.length; i++) {
-      var field = fields[i];
-      var fieldKey = field.getAttribute("data-field-key");
-      var fieldType = field.getAttribute("data-field-type") || "text";
-      if (!fieldKey) {
-        continue;
-      }
-
-      if (fieldType === "controlled") {
-        var select = field.querySelector("select");
-        payload.fields[fieldKey] = {
-          tag_id: select && select.value ? parseInt(select.value, 10) : 0,
-        };
-        continue;
-      }
-
-      if (fieldType === "controlled_multi") {
-        var multiSelect = field.querySelector("select");
-        payload.fields[fieldKey] = {
-          tag_ids: multiSelect
-            ? Array.prototype.slice
-                .call(multiSelect.options)
-                .filter(function (option) {
-                  return option.selected;
-                })
-                .map(function (option) {
-                  return parseInt(option.value, 10);
-                })
-                .filter(function (value) {
-                  return !isNaN(value) && value > 0;
-                })
-            : [],
-        };
-        continue;
-      }
-
-      if (fieldType === "availability_range") {
-        var fromSelect = field.querySelector('select[data-role="from"]');
-        var toSelect = field.querySelector('select[data-role="to"]');
-        payload.fields[fieldKey] = {
-          from_value: fromSelect ? fromSelect.value : "",
-          to_value: toSelect ? toSelect.value : "",
-        };
-        continue;
-      }
-
-      var input = field.querySelector("input, textarea");
-      payload.fields[fieldKey] = {
-        value_text: input ? input.value : "",
-      };
-    }
-
-    return payload;
-  }
-
   function showToaster(message, isError) {
     if (!message || typeof window.pwgToaster !== "function") {
       return;
@@ -379,56 +306,6 @@
           "",
         );
       }
-      return;
-    }
-
-    var profileButton = event.target.closest(".cpt-owner-profile-save-button");
-    if (profileButton) {
-      var profileCard = profileButton.closest(".cpt-owner-profile");
-      var profileManager = profileCard || document;
-      var profileTokenField = document.getElementById("pwg_token");
-      if (!profileCard || !profileTokenField || !profileTokenField.value) {
-        return;
-      }
-
-      var profilePayload = collectOwnerProfilePayload(profileManager);
-      if (!profilePayload) {
-        return;
-      }
-
-      setStatusMessage(profileCard, "", false);
-      profileButton.disabled = true;
-
-      submitWsRequest(
-        "core_privacy_toggle.owner_profile.update",
-        profileTokenField.value,
-        profilePayload,
-      )
-        .then(function (data) {
-          if (data && data.stat === "ok") {
-            setStatusMessage(
-              profileCard,
-              data.result ||
-                window.CPT_I18N_SAVE_SUCCESS ||
-                "Your changes have been saved.",
-              false,
-            );
-            showToaster(data.result, false);
-            return;
-          }
-
-          var message = getWsErrorMessage(data);
-          setStatusMessage(profileCard, message, true);
-          showToaster(message, true);
-        })
-        .catch(function () {
-          var message = window.CPT_I18N_SAVE_ERROR || "An error has occurred.";
-          setStatusMessage(profileCard, message, true);
-          showToaster(message, true);
-        })
-        .finally(function () {
-          profileButton.disabled = false;
-        });
       return;
     }
 

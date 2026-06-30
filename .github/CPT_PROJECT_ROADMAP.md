@@ -103,3 +103,53 @@ This is a long-term-vision section for ideas we can explore later.
 - **Feature: UCP Photo Upload:** A simplified photo uploader directly on the UCP page.
 - **Feature: Dashboard/Stats:** A small dashboard in the UCP showing view counts and comments for the user's albums.
 - **Feature: Owner Grouped Album Landing Page:** Optionally add a higher display level that groups albums under each owner and highlights the newest child album. This is now safer because inherited ownership is implemented.
+
+# CPT `PROJECT_ROADMAP.md` Extension: Owner Profile Extraction
+
+## Phase: Profile Extraction to Standalone Plugin
+
+Status: completed.
+
+### Goal
+
+Remove profile data ownership from CPT and keep CPT focused on album ownership, privacy, sharing, and album-tree helpers.
+
+### Keep in CPT
+
+- My Galleries UCP section
+- album privacy toggle
+- public/private/shared logic
+- user access synchronization
+- representative image selection
+- effective owner/root album helpers
+- album visibility helpers for PLG snapshot/restore
+
+### Move out of CPT
+
+- owner profile field schema
+- `piwigo_cpt_owner_profile` canonical storage
+- My Profile UCP section
+- public profile table rendering
+- contact number/contact channel fields
+- availability fields
+- municipality/city profile option support, if only used for profile fields
+
+### Transition Policy
+
+```text
+After cleanup:
+  CPT no longer provides My Profile
+  CPT no longer provides public profile rendering
+  CPT no longer provides profile save endpoints
+  CPT keeps album/privacy helpers
+  Owner Profile must own profile UI/data/display
+```
+
+### Definition of Done
+
+- CPT can run without profile code.
+- Existing album-management behavior remains unchanged.
+- Owner Profile plugin handles all profile UI/data/display.
+- PLG still uses CPT for album privacy/snapshot/restore.
+- CUG remains unaffected.
+- Legacy CPT profile templates, save paths, and profile field schema are removed from active runtime ownership.
