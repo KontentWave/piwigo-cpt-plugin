@@ -722,6 +722,7 @@ function cpt_ws_update_albums($params, &$service)
 		return new \PwgError(401, 'Access denied');
 	}
 
+	// Piwigo adds slashes to request values in common.inc before WS dispatch.
 	$payload = json_decode(stripslashes((string)($params['payload'] ?? '')), true);
 	if (!is_array($payload)) {
 		return new \PwgError(400, 'Invalid album payload');
@@ -754,11 +755,11 @@ function cpt_handle_album_form(array $payload, int $user_id): bool
 		$permission_options = [];
         if (isset($fields['name'])) {
             $name = trim($fields['name']);
-            if ($name !== '') { $updates['name'] = pwg_db_real_escape_string($name); }
+			if ($name !== '') { $updates['name'] = $name; }
         }
         if (isset($fields['comment'])) {
             $comment = trim($fields['comment']);
-            $updates['comment'] = pwg_db_real_escape_string($comment);
+			$updates['comment'] = $comment;
         }
 
 		$representative_requested = array_key_exists('representative_picture_id', $fields);

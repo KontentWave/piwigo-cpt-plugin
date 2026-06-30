@@ -33,7 +33,7 @@ Delivered components & behaviors:
 5. **Template Partial** (`ucp_album_manager.tpl`): Now a Bootstrap card layout with per‑album sub‑cards; fully escaped output; empty state message when no albums yet.
 6. **Progressive Enhancement Injection**: Server renders partial string → exported through inline JS → client script injects inside existing profile `<form>` (no nested forms) with accessibility preserved (`aria-label`).
 7. **AJAX Save Path**: A plugin webservice endpoint mirrors profile updates so theme-specific profile pages can save album changes without relying on a classic full-page form POST.
-8. **Submission & Validation**: Unified server-side update handling validates ownership per album, applies sanitized updates, and exposes inline success and error feedback.
+8. **Submission & Validation**: Unified server-side update handling validates ownership per album, applies sanitized updates, and exposes inline success and error feedback. The current album WS path also preserves multiline description content correctly by decoding the escaped request payload in the shape Piwigo delivers it at runtime and by leaving SQL escaping centralized inside `cpt_update_album()`.
 9. **Privacy Modes & Permission Sync**: UCP editing now supports `public`, `private`, and `shared with selected users`. Switching to private inserts explicit `user_access` rows (admin + owner), switching to shared writes explicit `user_access` rows (admin + owner + selected users), and switching to public removes them. Permission changes trigger user cache purge for immediate visibility updates across sessions.
 10. **Cache Invalidation**: Purges `user_cache` table entries after privacy transition; session flag supports subsequent permission recalculation.
 11. **Public/Mobile Album Shortcut**: Owner-only album page control allows toggling the current album between public and private directly from the public gallery, including Smart Pocket support.
@@ -88,7 +88,7 @@ Covered by test classes in `core_privacy_toggle/tests/`:
    - Also covers the `NULL` explicit-owner regression case when the ownership column exists but album metadata is incomplete.
 2. `AlbumUpdateSecurityTest` – Unauthorized update attempt ignored (no field mutations, returns false).
 3. `PrivacyToggleTest` – Private transition inserts explicit `user_access` rows (admin + owner), public transition removes them; now also asserts user cache purge flag each direction.
-4. `AlbumFieldPersistenceTest` – Name, comment, and status (`public`→`private`) update persists with UTF‑8 characters.
+4. `AlbumFieldPersistenceTest` – Name, comment, and status (`public`→`private`) update persists with UTF‑8 characters and the WS save path preserves multiline album descriptions without storing literal `\n` sequences.
 5. `FallbackUpdateTest` – Updates permitted/denied via fallback heuristic (exclusive contributor vs. mixed contributors) when ownership column missing.
 6. `AlbumEdgeCasesTest` – Blank name ignored (original retained), whitespace-only comment stored as empty string, long multi-byte description persists.
 7. `AlbumSharingTest` – Shared visibility writes admin + owner + selected-user access rows, empty shared selection degrades to private, and shareable user options exclude owner/admin.
@@ -104,6 +104,7 @@ Deferred / Not Unit-Tested Yet (future candidates):
 - Mixed contributor edge cases where images added after initial exclusivity break fallback ownership (can be added if regression discovered).
 - Public/mobile album-page toggle flow is now covered in Cypress smoke for descendant ownership and Smart Pocket rendering, but broader cross-browser coverage is still deferred.
 - Theme-driven AJAX profile-save path is implemented and now covered by dedicated Cypress interception plus persistence assertions.
+- Normal album description formatting depends on both CPT save-path handling and Bootstrap Darkroom rendering: CPT must decode the escaped WS payload shape correctly and pass raw trimmed `name` / `comment` values into `cpt_update_album()`, while the theme should preserve visible line breaks with `white-space: pre-line` on description output.
 
 **Cypress / E2E**
 
@@ -142,6 +143,7 @@ Still desired in future Cypress coverage:
 - Smart Pocket support depends on JS insertion because that theme does not render `PLUGIN_INDEX_CONTENT_BEGIN` on album pages.
 - Bootstrap Darkroom owner-profile placement now depends on early Smarty assignment rather than top-slot injection, because the mobile insert point lives inside `mainpage_categories.tpl` before the later desktop render path runs.
 - Browser automation coverage should include at least one Smart Pocket/mobile pass because album-page toggle rendering depends on a JS insertion shim rather than the standard plugin slot.
+- Multiline album descriptions now round-trip correctly through the CPT AJAX save path, but visible paragraph breaks on the public album page still depend on theme CSS preserving plain-text newlines, for example with `white-space: pre-line` in Bootstrap Darkroom.
 
 ### Future Considerations
 
