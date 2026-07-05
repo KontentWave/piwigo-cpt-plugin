@@ -1,22 +1,56 @@
-.cpt-album-manager .cpt-album .form-group {
+.cpt-album-manager .cpt-help,
+.cpt-album-manager .cpt-status {
+  margin-bottom: 1rem;
+}
+
+.cpt-album-manager .cpt-album {
+  padding: 1rem 0 1.25rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.cpt-album-manager .cpt-album:first-of-type {
+  padding-top: 0.25rem;
+  border-top: 0;
+}
+
+.cpt-album-manager .cpt-album-heading {
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+.cpt-album-manager .cpt-album-title {
+  font-weight: 400;
+}
+
+.cpt-album-manager .cpt-album-field {
   clear: both;
-}
-
-.cpt-album-manager .cpt-shared-users-group,
-.cpt-album-manager .cpt-cover-image-group {
-  align-items: flex-start;
-}
-
-.cpt-album-manager .cpt-shared-users-group .col-12,
-.cpt-album-manager .cpt-cover-image-group .col-12 {
+  margin-bottom: 1rem;
   max-width: 100%;
+}
+
+.cpt-album-manager .cpt-album-field > label {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.cpt-album-manager .cpt-album-field .form-control,
+.cpt-album-manager .cpt-album-field select,
+.cpt-album-manager .cpt-album-field input,
+.cpt-album-manager .cpt-album-field textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .cpt-album-manager .cpt-shared-users-select {
   display: block;
+  box-sizing: border-box;
   width: 100%;
   max-width: 100%;
   min-height: 8rem;
+  min-width: 0;
 }
 
 .cpt-album-manager .cpt-shared-users-group .form-text,
@@ -28,6 +62,7 @@
 
 .cpt-album-manager .cpt-save-actions {
   clear: both;
+  margin-top: 1.25rem;
 }
 
 .cpt-owner-profile .cpt-help,
@@ -56,10 +91,6 @@
 }
 
 @media (max-width: 768px) {
-  .cpt-album-manager .card-body {
-    padding-bottom: 5.5rem;
-  }
-
   .cpt-album-manager .cpt-save-actions {
     position: sticky;
     bottom: 0;

@@ -48,6 +48,7 @@ Tradeoffs:
 - Cypress smoke coverage now protects descendant visibility, descendant private guest blocking, explicit child-owner override, fallback limited-mode visibility, and the no-qualifying-albums hidden-state path. Broader scenario depth can still grow later from the feature files.
 - Keep CPT documentation explicit about any local Community integration patches that enforce the same owned-tree rule outside CPT itself.
 - Keep the local Community integration patches narrow: upload-target scoping should stay aligned to the effective owned tree, and photo-level privacy UI should remain hidden while CPT remains the album-level privacy authority for this deployment.
+- In `My Galleries`, continue treating the directly owned root album as the ownership anchor for the tree. Descendant albums may expose representative-image controls, but the root anchor row should stay focused on tree ownership / privacy and therefore omit the cover-image controls.
 - After Owner Profile extraction, keep inherited ownership in CPT as a stable cross-plugin contract. Owner Profile, PLG, and any other consumer should reuse CPT helper APIs for effective owner/root resolution instead of reimplementing tree ownership.
 - Profile extraction reduces CPT scope, but it does not move album-tree interpretation out of CPT. This ADR remains active because inherited ownership is still the policy boundary that the remaining album/privacy engine exposes.
 - Revisit only if Community later ships first-class inherited ownership semantics that CPT can trust directly.

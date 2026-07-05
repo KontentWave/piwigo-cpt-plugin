@@ -104,6 +104,51 @@
       : window.CPT_I18N_SAVE_ERROR || "An error has occurred.";
   }
 
+  function refreshProfileSectionHeight(node, forceOpen) {
+    if (!node) {
+      return;
+    }
+
+    var sectionDisplay = node.closest('[id$="-display"]');
+    if (!sectionDisplay) {
+      return;
+    }
+
+    if (
+      !forceOpen &&
+      !sectionDisplay.classList.contains("open") &&
+      (sectionDisplay.style.maxHeight === "" ||
+        sectionDisplay.style.maxHeight === "0px")
+    ) {
+      return;
+    }
+
+    if (typeof window.resetSection === "function" && sectionDisplay.id) {
+      window.resetSection(sectionDisplay.id, false, true);
+      return;
+    }
+
+    sectionDisplay.style.maxHeight = sectionDisplay.scrollHeight + "px";
+  }
+
+  function bindRepresentativeThumbRefresh(album, thumb) {
+    if (!album || !thumb) {
+      return;
+    }
+
+    var refresh = function () {
+      refreshProfileSectionHeight(album);
+    };
+
+    if (thumb.complete) {
+      refresh();
+      return;
+    }
+
+    thumb.addEventListener("load", refresh, { once: true });
+    thumb.addEventListener("error", refresh, { once: true });
+  }
+
   function syncSharedUsersVisibility(album) {
     var visibilityField = album.querySelector(".cpt-visibility-select");
     var sharedGroup = album.querySelector(".cpt-shared-users-group");
@@ -117,12 +162,19 @@
     if (sharedSelect) {
       sharedSelect.disabled = !isShared;
     }
+
+    refreshProfileSectionHeight(album);
   }
 
   function initAlbumManager(root) {
     var albums = root.querySelectorAll(".cpt-album[data-album-id]");
     for (var i = 0; i < albums.length; i++) {
       syncSharedUsersVisibility(albums[i]);
+
+      var currentThumb = albums[i].querySelector(
+        ".cpt-representative-current img",
+      );
+      bindRepresentativeThumbRefresh(albums[i], currentThumb);
     }
   }
 
@@ -189,6 +241,7 @@
       }
       thumb.src = src;
       thumb.alt = label || "";
+      bindRepresentativeThumbRefresh(album, thumb);
     } else if (thumb) {
       thumb.remove();
     }
@@ -206,6 +259,7 @@
 
     if (album.getAttribute("data-representatives-loaded") === "1") {
       picker.hidden = !picker.hidden;
+      refreshProfileSectionHeight(album);
       return;
     }
 
@@ -235,6 +289,7 @@
         renderRepresentativeOptions(album, data.result.images || []);
         album.setAttribute("data-representatives-loaded", "1");
         picker.hidden = false;
+        refreshProfileSectionHeight(album);
       })
       .catch(function () {
         var manager = album.closest(".cpt-album-manager");
@@ -251,13 +306,12 @@
   function updateAlbumHeaders(root, payload) {
     Object.keys(payload).forEach(function (albumId) {
       var header = root.querySelector(
-        '.cpt-album[data-album-id="' + albumId + '"] .card-header strong',
+        '.cpt-album[data-album-id="' + albumId + '"] .cpt-album-title',
       );
-      if (!header || !header.parentNode) {
+      if (!header) {
         return;
       }
-      header.parentNode.lastChild.textContent =
-        " " + (payload[albumId].name || "");
+      header.textContent = payload[albumId].name || "";
     });
   }
 
@@ -305,6 +359,7 @@
           current ? current.getAttribute("data-empty-label") : "",
           "",
         );
+        refreshProfileSectionHeight(clearAlbum);
       }
       return;
     }
@@ -373,6 +428,23 @@
   });
 
   document.addEventListener("DOMContentLoaded", function () {
+    var existingManagers = document.querySelectorAll(".cpt-album-manager");
+    for (
+      var managerIndex = 0;
+      managerIndex < existingManagers.length;
+      managerIndex++
+    ) {
+      if (
+        existingManagers[managerIndex].getAttribute("data-cpt-initialized") ===
+        "1"
+      ) {
+        continue;
+      }
+      existingManagers[managerIndex].setAttribute("data-cpt-initialized", "1");
+      initAlbumManager(existingManagers[managerIndex]);
+      refreshProfileSectionHeight(existingManagers[managerIndex], false);
+    }
+
     if (
       typeof window.CPT_ALBUM_HTML !== "string" ||
       window.CPT_ALBUM_HTML.trim() === ""
@@ -446,6 +518,11 @@
       }
     }
 
+    var injectedManager = fs.querySelector(".cpt-album-manager");
+    if (injectedManager) {
+      injectedManager.setAttribute("data-cpt-initialized", "1");
+    }
     initAlbumManager(fs);
+    refreshProfileSectionHeight(fs, true);
   });
 })();

@@ -30,24 +30,24 @@ Delivered components & behaviors:
 - Hybrid behavior: if the ownership column exists but a specific album has `NULL` owner metadata, fallback still applies when the user is the exclusive contributor.
 
 4. **Album Data Handling**: Secure fetch of `id, name, comment, status`; early escape if zero qualifying albums (no intrusive markup).
-5. **Template Partial** (`ucp_album_manager.tpl`): Now a Bootstrap card layout with per‑album sub‑cards; fully escaped output; empty state message when no albums yet.
-6. **Progressive Enhancement Injection**: Server renders partial string → exported through inline JS → client script injects inside existing profile `<form>` (no nested forms) with accessibility preserved (`aria-label`).
+5. **Template Partial** (`ucp_album_manager.tpl`): Now a native profile-block partial rendered inside Piwigo's profile section shell, with stacked full-width controls, fully escaped output, and no redundant inner card chrome.
+6. **Progressive Enhancement / Section Sync**: CPT attaches `My Galleries` as a native profile plugin block and still exports the same partial for fallback injection paths. The client script now initializes already-rendered blocks, preserves the default collapsed profile-section state on load, and refreshes the surrounding section height only after the user expands it or CPT reveals additional dynamic content.
 7. **AJAX Save Path**: A plugin webservice endpoint mirrors profile updates so theme-specific profile pages can save album changes without relying on a classic full-page form POST.
 8. **Submission & Validation**: Unified server-side update handling validates ownership per album, applies sanitized updates, and exposes inline success and error feedback. The current album WS path also preserves multiline description content correctly by decoding the escaped request payload in the shape Piwigo delivers it at runtime and by leaving SQL escaping centralized inside `cpt_update_album()`.
 9. **Privacy Modes & Permission Sync**: UCP editing now supports `public`, `private`, and `shared with selected users`. Switching to private inserts explicit `user_access` rows (admin + owner), switching to shared writes explicit `user_access` rows (admin + owner + selected users), and switching to public removes them. Permission changes trigger user cache purge for immediate visibility updates across sessions.
 10. **Cache Invalidation**: Purges `user_cache` table entries after privacy transition; session flag supports subsequent permission recalculation.
 11. **Public/Mobile Album Shortcut**: Owner-only album page control allows toggling the current album between public and private directly from the public gallery, including Smart Pocket support.
-12. **Internationalization**: Visible plugin strings are localized for `en_UK`, `fr_FR`, `sk_SK`, `es_ES`, `hu_HU`, `ru_RU`, `uk_UA`, and `zh_CN`, including admin/help text, album-page toggle labels, and the newer visibility/share controls. Native-script translations are now used for Russian, Ukrainian, and Simplified Chinese instead of transliterated placeholders.
+12. **Internationalization**: Visible plugin strings are localized for `en_UK`, `fr_FR`, `sk_SK`, `es_ES`, `hu_HU`, `ru_RU`, `uk_UA`, and `zh_CN`, including admin/help text, album-page toggle labels, and the newer visibility/share controls. Native-script translations are used for Russian, Ukrainian, and Simplified Chinese, and the Latin-script locales now also carry localized `Visibility` / sharing labels instead of falling back to English.
 13. **Fallback Messaging**: Admin diagnostic hint for missing ownership column; user-facing limited mode banner when operating via fallback heuristic only.
 14. **Security**: Ownership re‑checked server-side for every album before write; only whitelisted columns updated; UCP visibility constrained to `public|private|shared` with selected users validated against real shareable accounts; album-page actions remain constrained to `public|private` and require a valid `pwg_token`.
 15. **Accessibility**: Semantic form controls, proper labels, grouped cards; removal of duplicate legends while retaining screen-reader context via `aria-label`.
-16. **Styling & Theme Compatibility**: Profile UI uses host theme styles; public and mobile toggle ships dedicated lightweight CSS and JS because Smart Pocket does not render the standard plugin content slot.
-17. **Representative Image MVP**: The UCP editor now exposes a hidden `representative_picture_id`, shows the current cover image when present, lazy-loads eligible album photos through `core_privacy_toggle.album.images`, and lets the owner set or clear the native Piwigo `categories.representative_picture_id` field.
+16. **Styling & Theme Compatibility**: Profile UI now follows the host theme's native profile-section shell more closely, using stacked full-width controls instead of the earlier narrow split-column layout. CPT keeps `My Galleries` collapsed by default, but once the user expands it the section height stays synchronized as visibility/share blocks or representative-image content grow. Public and mobile toggle still ships dedicated lightweight CSS and JS because Smart Pocket does not render the standard plugin content slot.
+17. **Representative Image MVP**: The UCP editor exposes a hidden `representative_picture_id`, shows the current cover image when present, lazy-loads eligible album photos through `core_privacy_toggle.album.images`, and lets the owner set or clear the native Piwigo `categories.representative_picture_id` field. The effective owner root album is now treated as the tree anchor in `My Galleries`, so its row no longer shows representative-image controls while descendant albums still do.
 18. **Community Upload Target Restriction (Local Integration Patch)**: The local Community runtime now clamps non-admin user-album upload and create scopes to the current user's own album tree, so `/add_photos` offers only that user's root and descendants instead of unrelated user roots.
 19. **Community Photo Privacy UI Hidden (Local Integration Patch)**: The local Community `edit_photos` screen no longer offers the bulk `Who can see these photos? (Privacy level)` action, because the supported privacy model for this audience is album-level visibility plus selected-user sharing from CPT.
 20. **Owner Profile Extraction Completed**: CPT no longer ships active `My Profile` UI, public owner-profile rendering, or profile save endpoints. Those responsibilities now belong to the Owner Profile plugin.
 21. **Compatibility Boundary**: CPT keeps the album/privacy helper APIs that other plugins depend on, but no longer owns owner-profile field schemas, contact rendering, availability rendering, or municipality-backed city options.
-22. **Testing**: Comprehensive PHPUnit coverage now spans ownership, privacy transitions, sharing permission sync, inherited descendant ownership, explicit child-owner override, representative-image assignment, and the album/privacy helper surface that remains after profile extraction. Browser coverage includes the descendant toggle flow, Smart Pocket rendering, Community upload-target scoping, the representative-image live picker flow, end-to-end selected-user sharing, the theme-driven AJAX album-save path, the fallback limited-mode banner path, and the no-qualifying-albums hidden-state path.
+22. **Testing**: Comprehensive PHPUnit coverage now spans ownership, privacy transitions, sharing permission sync, inherited descendant ownership, explicit child-owner override, representative-image assignment, and the album/privacy helper surface that remains after profile extraction. Browser coverage includes the descendant toggle flow, Smart Pocket rendering, Community upload-target scoping, the representative-image live picker flow, end-to-end selected-user sharing, the theme-driven AJAX album-save path, the fallback limited-mode banner path, the no-qualifying-albums hidden-state path, the post-extraction Owner Profile boundary, and a geometry regression that keeps the save button inside the visible `My Galleries` panel in both single-line and shared-visibility states.
 23. **CI**: GitHub Actions workflows for PHPUnit and Cypress integrated.
 
 ### Remaining (Deferred) Items
@@ -63,10 +63,10 @@ Delivered components & behaviors:
 
 Current implementation relies solely on native HTML form semantics:
 
-- Injected wrapper is a `<fieldset>` given an `aria-label` (the former visible legend was removed during UI refinement to avoid duplicate headings).
-- Each album sub-card uses a `.card-header` as a visual group label; can be promoted to a semantic heading tag later without logic changes.
+- Injected wrapper is still a `<fieldset>` fallback with an `aria-label`, but the preferred runtime is now the native profile-section block rendered through `PLUGINS_PROFILE`.
+- Each album row uses a plain text heading inside the host profile section rather than a nested Bootstrap card header.
 - Labels are properly associated via `for`/`id`; no custom widgets means no additional ARIA roles.
-- Progressive enhancement: with JS disabled, server-side markup (and hidden marker) still allows editing; JS only relocates/stylizes content.
+- Progressive enhancement: with JS disabled, the server-rendered block still allows editing; with JS enabled, CPT enhances the same markup and keeps the expanded section height in sync only after the user opens the panel.
 - Future representative image selector must ensure full keyboard operability (arrow or Tab navigation, focus style, and screen reader announcement of selection state).
 - Public/mobile album toggle intentionally stays native: standard form submit, explicit button label, no JavaScript-only dependency for the actual permission change.
 
@@ -118,12 +118,13 @@ Current automated browser coverage in `_qa/cypress/cypress/e2e/smoke.cy.ts`:
 6. Parent ownership does not override an explicit different child owner when an override-seeded album is provided.
 7. The explicit child owner sees the album-page shortcut when override credentials are configured.
 8. Smart Pocket/mobile album pages render the injected CPT privacy shortcut when the mobile theme is enabled.
-9. The owner can save public profile fields from `My Profile` and see them render on the owned root album page.
-10. The owner can choose a different representative image for a managed album, save it, clear it again, and restore the original representative through the live picker flow.
+9. The post-extraction profile flow keeps owner-profile ownership outside CPT while `My Galleries` still works for album management.
+10. The owner can choose a different representative image for a managed descendant album, save it, clear it again, and restore the original representative through the live picker flow.
 11. The owner can switch a managed descendant album to `Shared with selected users`, preserve access for the chosen user, and keep guests blocked until the album is restored to public.
 12. The owner can save album changes on the profile page through the `core_privacy_toggle.albums.update` AJAX webservice path, with the intercepted payload and persisted result both verified.
-13. When ownership columns are unavailable, the fallback limited-mode banner is shown and fallback-eligible albums remain manageable from `My Galleries`.
-14. A logged-in account with no qualifying albums sees no CPT management sections in the profile/UCP flow.
+13. The save button remains inside the visible `My Galleries` panel in both single-line and shared-visibility states.
+14. When ownership columns are unavailable, the fallback limited-mode banner is shown and fallback-eligible albums remain manageable from `My Galleries`.
+15. A logged-in account with no qualifying albums sees no CPT management sections in the profile/UCP flow.
 
 Still desired in future Cypress coverage:
 
@@ -141,6 +142,7 @@ Still desired in future Cypress coverage:
 - Fallback may be replaced by native ownership once Community (or another plugin) populates a supported ownership column.
 - Clearing template cache or hard-refresh may be needed after deploying updated JS or template partials.
 - Smart Pocket support depends on JS insertion because that theme does not render `PLUGIN_INDEX_CONTENT_BEGIN` on album pages.
+- Bootstrap Darkroom `My Galleries` styling now assumes the theme's native profile-section shell rather than a nested CPT card, so changes to the host profile collapse/expand behavior should be validated against CPT section-height synchronization.
 - Bootstrap Darkroom owner-profile placement now depends on early Smarty assignment rather than top-slot injection, because the mobile insert point lives inside `mainpage_categories.tpl` before the later desktop render path runs.
 - Browser automation coverage should include at least one Smart Pocket/mobile pass because album-page toggle rendering depends on a JS insertion shim rather than the standard plugin slot.
 - Multiline album descriptions now round-trip correctly through the CPT AJAX save path, but visible paragraph breaks on the public album page still depend on theme CSS preserving plain-text newlines, for example with `white-space: pre-line` in Bootstrap Darkroom.

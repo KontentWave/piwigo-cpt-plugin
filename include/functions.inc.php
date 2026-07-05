@@ -316,12 +316,14 @@ function cpt_build_album_editor_row(array $row, int $owner_user_id): array
 	$album_id = (int) $row['id'];
 	$shared_users = cpt_get_album_shared_user_ids($album_id, $owner_user_id);
 	$representative = cpt_get_album_representative_details($album_id);
+	$effective_owner_root_album_id = cpt_get_effective_owner_root_album_id_for_album($album_id);
 
 	return [
 		'id' => $album_id,
 		'name' => $row['name'],
 		'comment' => $row['comment'],
 		'status' => $row['status'],
+		'is_effective_owner_root' => $effective_owner_root_album_id !== null && $effective_owner_root_album_id === $album_id,
 		'visibility' => cpt_get_album_visibility_mode($album_id, $owner_user_id),
 		'shared_users' => $shared_users,
 		'shared_user_lookup' => array_fill_keys($shared_users, true),
