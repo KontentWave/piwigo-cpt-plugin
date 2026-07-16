@@ -146,7 +146,9 @@ function cpt_handle_album_page_toggle(): void
 	}
 
 	$current_status = cpt_get_album_status($album_id) ?? (string) ($category['status'] ?? 'public');
-	if ($current_status !== $target_status) {
+	$should_reconcile_descendants = $current_status === $target_status
+		&& cpt_should_propagate_private_status_to_descendants($album_id, array('status' => $target_status), array(), $user_id);
+	if ($current_status !== $target_status || $should_reconcile_descendants) {
 		cpt_update_album($album_id, array('status' => $target_status), false, array(), $user_id);
 		$_SESSION['page_infos'][] = l10n('Album privacy updated.');
 	}
@@ -1023,6 +1025,152 @@ function cpt_get_effective_owner_root_album_data(int $user_id): ?array
 	return is_array($row) ? $row : null;
 }
 
+function cpt_get_descendant_album_ids(int $album_id): array
+{
+	$result = pwg_query('SELECT id, uppercats FROM '.CATEGORIES_TABLE.' ORDER BY id ASC');
+	if (!$result) {
+		return [];
+	}
+
+	$descendant_ids = [];
+	while ($row = pwg_db_fetch_assoc($result)) {
+		$candidate_id = (int) ($row['id'] ?? 0);
+		if ($candidate_id <= 0 || $candidate_id === $album_id || empty($row['uppercats'])) {
+			continue;
+		}
+
+		$path_ids = array_values(array_filter(array_map('intval', explode(',', (string) $row['uppercats']))));
+		if (in_array($album_id, array_slice($path_ids, 0, -1), true)) {
+			$descendant_ids[] = $candidate_id;
+		}
+	}
+
+	return $descendant_ids;
+}
+
+function cpt_should_propagate_private_status_to_descendants(int $album_id, array $fields, array $permission_options = [], ?int $owner_user_id = null): bool
+{
+	if (($fields['status'] ?? null) !== 'private') {
+		return false;
+	}
+
+	$mode = $permission_options['mode'] ?? 'private';
+	if ($mode !== 'private') {
+		return false;
+	}
+
+	$direct_owner_id = cpt_get_album_direct_owner_id($album_id);
+	if ($direct_owner_id === null) {
+		return false;
+	}
+
+	if ($owner_user_id !== null && $direct_owner_id !== (int) $owner_user_id) {
+		return false;
+	}
+
+	return cpt_get_effective_owner_root_album_id_for_album($album_id) === $album_id;
+}
+
+function cpt_sync_album_visibility_permissions(int $album_id, string $new_status, array $permission_options = [], ?int $owner_user_id = null, bool $debug = false): void
+{
+	$mode = $permission_options['mode'] ?? ($new_status === 'private' ? 'private' : 'public');
+	$shared_user_ids = [];
+	if (!empty($permission_options['shared_user_ids']) && is_array($permission_options['shared_user_ids'])) {
+		$shared_user_ids = array_values(array_unique(array_map('intval', $permission_options['shared_user_ids'])));
+	}
+
+	if ($new_status === 'private') {
+		pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int) $album_id);
+
+		$owner_id = $owner_user_id;
+		if ($owner_id === null) {
+			$owner_id = cpt_get_album_effective_owner_id($album_id);
+		}
+		if ($owner_id === null) {
+			$resImg = pwg_query('SELECT i.added_by FROM '.IMAGE_CATEGORY_TABLE.' ic INNER JOIN '.IMAGES_TABLE.' i ON i.id=ic.image_id WHERE ic.category_id='.(int) $album_id.' ORDER BY i.id ASC LIMIT 1');
+			if ($resImg) {
+				$rowI = pwg_db_fetch_assoc($resImg);
+				if ($rowI) {
+					$owner_id = (int) $rowI['added_by'];
+				}
+			}
+		}
+
+		$allowed_user_ids = [1];
+		if ($owner_id !== null && $owner_id > 0) {
+			$allowed_user_ids[] = (int) $owner_id;
+		}
+		if ($mode === 'shared') {
+			$allowed_user_ids = array_merge($allowed_user_ids, $shared_user_ids);
+		}
+		$allowed_user_ids = array_values(array_unique(array_filter($allowed_user_ids, fn($id) => (int) $id > 0)));
+
+		$insValues = [];
+		foreach ($allowed_user_ids as $allowed_user_id) {
+			$insValues[] = '('.(int) $allowed_user_id.','.(int) $album_id.')';
+		}
+		if (!empty($insValues)) {
+			$permSql = 'INSERT INTO '.USER_ACCESS_TABLE.' (user_id, cat_id) VALUES '.implode(',', $insValues);
+			pwg_query($permSql);
+			if ($debug) {
+				global $page;
+				$page['infos'][] = '[CPT debug] Permissions synced: '.htmlspecialchars($permSql);
+			}
+		}
+	} elseif ($new_status === 'public') {
+		pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int) $album_id);
+		if ($debug) {
+			global $page;
+			$page['infos'][] = '[CPT debug] Cleared user_access rows for now-public album '.$album_id;
+		}
+	}
+}
+
+function cpt_private_root_has_nonprivate_descendants(int $album_id): bool
+{
+	foreach (cpt_get_descendant_album_ids($album_id) as $descendant_album_id) {
+		if (cpt_get_album_status((int) $descendant_album_id) !== 'private') {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+function cpt_reconcile_private_owner_root_descendants_for_user(int $user_id): bool
+{
+	static $checked_user_ids = [];
+
+	if ($user_id <= 0) {
+		return false;
+	}
+
+	if (array_key_exists($user_id, $checked_user_ids)) {
+		return $checked_user_ids[$user_id];
+	}
+
+	$checked_user_ids[$user_id] = false;
+	foreach (cpt_fetch_albums_owned_by($user_id) as $album) {
+		$album_id = (int) ($album['id'] ?? 0);
+		if ($album_id <= 0 || empty($album['is_effective_owner_root'])) {
+			continue;
+		}
+
+		if (cpt_get_album_status($album_id) !== 'private') {
+			continue;
+		}
+
+		if (!cpt_private_root_has_nonprivate_descendants($album_id)) {
+			continue;
+		}
+
+		cpt_update_album($album_id, ['status' => 'private'], false, ['mode' => 'private', 'shared_user_ids' => []], $user_id);
+		$checked_user_ids[$user_id] = true;
+	}
+
+	return $checked_user_ids[$user_id];
+}
+
 /**
  * Returns the explicit owner id when the ownership column exists and is set.
  */
@@ -1038,10 +1186,14 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false, array
 {
 	if (empty($fields)) { return; }
 	$old_status = null;
+	$privacy_target_album_ids = [$album_id];
 	if (isset($fields['status'])) {
 		// Fetch previous status to detect transition
 		$resPrev = pwg_query('SELECT status FROM '.CATEGORIES_TABLE.' WHERE id='.(int)$album_id.' LIMIT 1');
 		if ($resPrev) { $r = pwg_db_fetch_assoc($resPrev); $old_status = $r['status'] ?? null; }
+		if (cpt_should_propagate_private_status_to_descendants($album_id, $fields, $permission_options, $owner_user_id)) {
+			$privacy_target_album_ids = array_merge($privacy_target_album_ids, cpt_get_descendant_album_ids($album_id));
+		}
 	}
 	$assignments = [];
 	foreach ($fields as $col => $val) {
@@ -1051,54 +1203,36 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false, array
 	$result = pwg_query($sql);
 	if ($debug) { global $page; $page['infos'][] = '[CPT debug] SQL: '.htmlspecialchars($sql).' result='.($result?'ok':'fail'); }
 	if ($result) {
+		if (isset($fields['status']) && count($privacy_target_album_ids) > 1) {
+			$escaped_status = pwg_db_real_escape_string($fields['status']);
+			foreach ($privacy_target_album_ids as $target_album_id) {
+				if ($target_album_id === $album_id) {
+					continue;
+				}
+
+				$descendant_sql = 'UPDATE '.CATEGORIES_TABLE." SET status='".$escaped_status."' WHERE id=".(int) $target_album_id.' LIMIT 1';
+				pwg_query($descendant_sql);
+				if ($debug) {
+					global $page;
+					$page['infos'][] = '[CPT debug] Propagated privacy SQL: '.htmlspecialchars($descendant_sql);
+				}
+			}
+		}
+
 		// Invalidate user-related caches so visibility changes propagate quickly
 		if (function_exists('invalidate_user_cache')) { invalidate_user_cache(); }
 		if (function_exists('trigger_notify')) { trigger_notify('invalidate_user_cache'); }
 
 		// Synchronize permissions for private/public transitions
-		if (isset($fields['status']) && ($old_status !== $fields['status'] || !empty($permission_options))) {
+		if (isset($fields['status']) && ($old_status !== $fields['status'] || !empty($permission_options) || count($privacy_target_album_ids) > 1)) {
 			// One-shot flag for other sessions to re-evaluate permissions on next request
 			$_SESSION['cpt_permissions_changed'] = 1;
 			$new_status = $fields['status'];
-			$mode = $permission_options['mode'] ?? ($new_status === 'private' ? 'private' : 'public');
-			$shared_user_ids = [];
-			if (!empty($permission_options['shared_user_ids']) && is_array($permission_options['shared_user_ids'])) {
-				$shared_user_ids = array_values(array_unique(array_map('intval', $permission_options['shared_user_ids'])));
-			}
-			if ($new_status === 'private') {
-				// Remove any existing explicit permissions first to avoid duplication
-				pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int)$album_id);
-				// Grant album owner + admin (user_id=1) access
-				$owner_id = $owner_user_id;
-				if ($owner_id === null) {
-					$owner_id = cpt_get_album_effective_owner_id($album_id);
-				}
-				if ($owner_id === null) {
-					$resImg = pwg_query('SELECT i.added_by FROM '.IMAGE_CATEGORY_TABLE.' ic INNER JOIN '.IMAGES_TABLE.' i ON i.id=ic.image_id WHERE ic.category_id='.(int)$album_id.' ORDER BY i.id ASC LIMIT 1');
-					if ($resImg) { $rowI = pwg_db_fetch_assoc($resImg); if ($rowI) { $owner_id = (int)$rowI['added_by']; } }
-				}
-				$allowed_user_ids = [1];
-				if ($owner_id !== null && $owner_id > 0) {
-					$allowed_user_ids[] = (int) $owner_id;
-				}
-				if ($mode === 'shared') {
-					$allowed_user_ids = array_merge($allowed_user_ids, $shared_user_ids);
-				}
-				$allowed_user_ids = array_values(array_unique(array_filter($allowed_user_ids, fn($id) => (int) $id > 0)));
-
-				$insValues = [];
-				foreach ($allowed_user_ids as $allowed_user_id) {
-					$insValues[] = '('.(int) $allowed_user_id.','.(int)$album_id.')';
-				}
-				if (!empty($insValues)) {
-					$permSql = 'INSERT INTO '.USER_ACCESS_TABLE.' (user_id, cat_id) VALUES '.implode(',', $insValues);
-					pwg_query($permSql);
-					if ($debug) { global $page; $page['infos'][] = '[CPT debug] Permissions synced: '.htmlspecialchars($permSql); }
-				}
-			} elseif ($new_status === 'public') {
-				// Public albums should not carry user-specific access rows (unless custom), remove our minimal set
-				pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int)$album_id);
-				if ($debug) { global $page; $page['infos'][] = '[CPT debug] Cleared user_access rows for now-public album '.$album_id; }
+			foreach ($privacy_target_album_ids as $target_album_id) {
+				$target_permission_options = $target_album_id === $album_id
+					? $permission_options
+					: ['mode' => 'private', 'shared_user_ids' => []];
+				cpt_sync_album_visibility_permissions($target_album_id, $new_status, $target_permission_options, $owner_user_id, $debug);
 			}
 			if (function_exists('trigger_notify')) { trigger_notify('CPT_after_privacy_change', $album_id); }
 			// Purge cached per-user access rows so permission recalculation occurs

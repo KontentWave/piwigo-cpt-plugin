@@ -77,7 +77,7 @@ if (defined('IN_ADMIN'))
  */
 function core_privacy_toggle_init()
 {
-  global $conf;
+  global $conf, $user;
 
   // load plugin language file
   load_language('plugin.lang', CORE_PRIVACY_TOGGLE_PATH);
@@ -91,5 +91,9 @@ function core_privacy_toggle_init()
   if (!empty($_SESSION['cpt_permissions_changed'])) {
     if (function_exists('invalidate_user_cache')) { invalidate_user_cache(); }
     unset($_SESSION['cpt_permissions_changed']);
+  }
+
+  if (!empty($user['id'])) {
+    cpt_reconcile_private_owner_root_descendants_for_user((int) $user['id']);
   }
 }
