@@ -37,6 +37,14 @@ with query context before returning the sentinel.
 
 ### R2 — HIGH — Privacy transitions are not atomic
 
+> **✅ FIXED** in `9ffc60a` (2026-07-19): steps 1–4 now run inside a single
+> transaction (`pwg_query('BEGIN')` / `COMMIT` / `ROLLBACK`); every write is
+> verified and any failed step rolls back the whole transition, so a private
+> album can no longer end up without `user_access` rows and a private root can
+> no longer keep public descendants. On failure no cache invalidation and no
+> success message occur — callers surface a translatable error instead
+> (`cpt_update_album()` now returns bool). Covered by two new rollback tests.
+
 `cpt_update_album()` ([functions.inc.php L1170-L1246](../../../include/functions.inc.php#L1170-L1246)) performs, in order, with **no
 transaction and no per-step verification**:
 
