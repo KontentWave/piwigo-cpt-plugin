@@ -125,4 +125,37 @@ class PrivacyToggleTest extends TestCase
             $this->assertSame([1, 17], $userIds);
         }
     }
+
+    public function testMultiAlbumSaveInvalidatesUserCacheExactlyOnce()
+    {
+        cpt_test_set_user(18);
+        $first = cpt_test_create_owned_album(18, 'public', 'First', '');
+        $second = cpt_test_create_owned_album(18, 'public', 'Second', '');
+
+        $changed = cpt_handle_album_form([
+            $first => ['name' => 'First', 'comment' => '', 'private' => '1'],
+            $second => ['name' => 'Second', 'comment' => '', 'private' => '1'],
+        ], 18);
+
+        $this->assertTrue($changed);
+        $this->assertSame(1, cpt_test_user_cache_invalidation_count(),
+            'One save must trigger exactly one cache invalidation, not one per album');
+        $this->assertSame([false], cpt_test_user_cache_invalidate_full_flags(),
+            'Invalidation must use need_update (full=false), never a TRUNCATE');
+    }
+
+    public function testNonPrivacyEditDoesNotInvalidateUserCache()
+    {
+        cpt_test_set_user(19);
+        $albumId = cpt_test_create_owned_album(19, 'public', 'Echo', '');
+
+        $changed = cpt_handle_album_form([
+            $albumId => ['name' => 'Echo renamed', 'comment' => 'new text'],
+        ], 19);
+
+        $this->assertTrue($changed);
+        $this->assertSame('Echo renamed', cpt_test_get_category($albumId)['name']);
+        $this->assertSame(0, cpt_test_user_cache_invalidation_count(),
+            'Editing name/comment without a privacy transition must not touch the user cache');
+    }
 }

@@ -150,6 +150,7 @@ function cpt_handle_album_page_toggle(): void
 		&& cpt_should_propagate_private_status_to_descendants($album_id, array('status' => $target_status), array(), $user_id);
 	if ($current_status !== $target_status || $should_reconcile_descendants) {
 		cpt_update_album($album_id, array('status' => $target_status), false, array(), $user_id);
+		cpt_flush_user_cache_invalidation();
 		$_SESSION['page_infos'][] = l10n('Album privacy updated.');
 	}
 
@@ -816,6 +817,8 @@ function cpt_handle_album_form(array $payload, int $user_id): bool
 			$updated_any = true;
 		}
     }
+    // Single invalidation for the whole submit (no-op when no privacy change)
+    cpt_flush_user_cache_invalidation();
     return $updated_any;
 }
 
@@ -1071,7 +1074,7 @@ function cpt_should_propagate_private_status_to_descendants(int $album_id, array
 	return cpt_get_effective_owner_root_album_id_for_album($album_id) === $album_id;
 }
 
-function cpt_sync_album_visibility_permissions(int $album_id, string $new_status, array $permission_options = [], ?int $owner_user_id = null, bool $debug = false): void
+function cpt_sync_album_visibility_permissions(int $album_id, string $new_status, array $permission_options = [], ?int $owner_user_id = null, bool $debug = false): bool
 {
 	$mode = $permission_options['mode'] ?? ($new_status === 'private' ? 'private' : 'public');
 	$shared_user_ids = [];
@@ -1079,9 +1082,9 @@ function cpt_sync_album_visibility_permissions(int $album_id, string $new_status
 		$shared_user_ids = array_values(array_unique(array_map('intval', $permission_options['shared_user_ids'])));
 	}
 
-	if ($new_status === 'private') {
-		pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int) $album_id);
+	$current_user_ids = cpt_get_album_access_user_ids($album_id);
 
+	if ($new_status === 'private') {
 		$owner_id = $owner_user_id;
 		if ($owner_id === null) {
 			$owner_id = cpt_get_album_effective_owner_id($album_id);
@@ -1104,7 +1107,14 @@ function cpt_sync_album_visibility_permissions(int $album_id, string $new_status
 			$allowed_user_ids = array_merge($allowed_user_ids, $shared_user_ids);
 		}
 		$allowed_user_ids = array_values(array_unique(array_filter($allowed_user_ids, fn($id) => (int) $id > 0)));
+		sort($allowed_user_ids);
 
+		if ($allowed_user_ids === $current_user_ids) {
+			// Access rows already match the target set — nothing to write.
+			return false;
+		}
+
+		pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int) $album_id);
 		$insValues = [];
 		foreach ($allowed_user_ids as $allowed_user_id) {
 			$insValues[] = '('.(int) $allowed_user_id.','.(int) $album_id.')';
@@ -1117,13 +1127,38 @@ function cpt_sync_album_visibility_permissions(int $album_id, string $new_status
 				$page['infos'][] = '[CPT debug] Permissions synced: '.htmlspecialchars($permSql);
 			}
 		}
-	} elseif ($new_status === 'public') {
+		return true;
+	}
+
+	if ($new_status === 'public') {
+		if (empty($current_user_ids)) {
+			return false;
+		}
 		pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int) $album_id);
 		if ($debug) {
 			global $page;
 			$page['infos'][] = '[CPT debug] Cleared user_access rows for now-public album '.$album_id;
 		}
+		return true;
 	}
+
+	return false;
+}
+
+/**
+ * Current user ids holding a user_access row for the album, sorted.
+ */
+function cpt_get_album_access_user_ids(int $album_id): array
+{
+	$user_ids = [];
+	$result = pwg_query('SELECT user_id FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int) $album_id);
+	if ($result) {
+		while ($row = pwg_db_fetch_assoc($result)) {
+			$user_ids[] = (int) $row['user_id'];
+		}
+	}
+	sort($user_ids);
+	return $user_ids;
 }
 
 function cpt_private_root_has_nonprivate_descendants(int $album_id): bool
@@ -1167,6 +1202,8 @@ function cpt_reconcile_private_owner_root_descendants_for_user(int $user_id): bo
 		cpt_update_album($album_id, ['status' => 'private'], false, ['mode' => 'private', 'shared_user_ids' => []], $user_id);
 		$checked_user_ids[$user_id] = true;
 	}
+
+	cpt_flush_user_cache_invalidation();
 
 	return $checked_user_ids[$user_id];
 }
@@ -1219,24 +1256,24 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false, array
 			}
 		}
 
-		// Invalidate user-related caches so visibility changes propagate quickly
-		if (function_exists('invalidate_user_cache')) { invalidate_user_cache(); }
-		if (function_exists('trigger_notify')) { trigger_notify('invalidate_user_cache'); }
-
 		// Synchronize permissions for private/public transitions
 		if (isset($fields['status']) && ($old_status !== $fields['status'] || !empty($permission_options) || count($privacy_target_album_ids) > 1)) {
-			// One-shot flag for other sessions to re-evaluate permissions on next request
-			$_SESSION['cpt_permissions_changed'] = 1;
 			$new_status = $fields['status'];
+			$permissions_changed = false;
 			foreach ($privacy_target_album_ids as $target_album_id) {
 				$target_permission_options = $target_album_id === $album_id
 					? $permission_options
 					: ['mode' => 'private', 'shared_user_ids' => []];
-				cpt_sync_album_visibility_permissions($target_album_id, $new_status, $target_permission_options, $owner_user_id, $debug);
+				if (cpt_sync_album_visibility_permissions($target_album_id, $new_status, $target_permission_options, $owner_user_id, $debug)) {
+					$permissions_changed = true;
+				}
 			}
-			if (function_exists('trigger_notify')) { trigger_notify('CPT_after_privacy_change', $album_id); }
-			// Purge cached per-user access rows so permission recalculation occurs
-			cpt_purge_user_cache();
+			if ($old_status !== $fields['status'] || $permissions_changed) {
+				if (function_exists('trigger_notify')) { trigger_notify('CPT_after_privacy_change', $album_id); }
+				// Defer cache invalidation: callers flush once after the complete save
+				// (audit P4/S5 — one invalidation per request, not per album).
+				cpt_mark_user_cache_dirty();
+			}
 		}
 	}
 }
@@ -1299,19 +1336,54 @@ function cpt_has_album_ownership_column(): bool
 }
 
 /**
- * Purge the user cache table to force permission recalculation.
- * This table stores precomputed accessible/forbidden categories per user.
- * We delete rows (instead of TRUNCATE for portability) whenever an album privacy
- * state changes so non-owner sessions immediately reflect new visibility.
+ * Mark the per-user permission cache as needing invalidation.
+ *
+ * cpt_update_album() calls this instead of wiping the cache directly; the
+ * caller that owns the save loop flushes once via
+ * cpt_flush_user_cache_invalidation() so a multi-album submit performs a
+ * single invalidation instead of one gallery-wide wipe per album (P4/S5).
  */
-function cpt_purge_user_cache(): void
+function cpt_mark_user_cache_dirty(): void
 {
+	$GLOBALS['__cpt_user_cache_dirty'] = true;
+}
+
+/**
+ * Flush a pending cache invalidation (no-op when nothing changed).
+ * Call once after the complete save, never inside per-album loops.
+ */
+function cpt_flush_user_cache_invalidation(): void
+{
+	if (empty($GLOBALS['__cpt_user_cache_dirty'])) {
+		return;
+	}
+	$GLOBALS['__cpt_user_cache_dirty'] = false;
+	cpt_invalidate_user_cache();
+}
+
+/**
+ * Flag every user's cached visibility for lazy recomputation.
+ *
+ * A public<->private change affects the cached visibility of every normal
+ * user, so per-user targeting is insufficient here. Uses core
+ * invalidate_user_cache(false) when loaded (admin context): it sets
+ * need_update='true' so each user's cache rebuilds lazily on their next
+ * request. NEVER call it with defaults — $full=true TRUNCATEs both
+ * user_cache and user_cache_categories. The core function lives in
+ * admin/include/functions.php and is undefined on front-end paths (profile
+ * page, quick toggle, web service), so issue the equivalent SQL there.
+ */
+function cpt_invalidate_user_cache(): void
+{
+	if (function_exists('invalidate_user_cache')) {
+		invalidate_user_cache(false);
+		return;
+	}
 	global $prefixeTable;
-	if (empty($prefixeTable)) { return; }
-	$table = $prefixeTable.'user_cache';
-	// Verify table exists (avoid warnings on installs lacking it)
-	$check = pwg_query("SHOW TABLES LIKE '".pwg_db_real_escape_string($table)."'");
-	if (!$check || !pwg_db_fetch_row($check)) { return; }
-			pwg_query('DELETE FROM '.$table);
+	$table = defined('USER_CACHE_TABLE') ? USER_CACHE_TABLE : $prefixeTable.'user_cache';
+	pwg_query('UPDATE '.$table." SET need_update = 'true'");
+	if (function_exists('trigger_notify')) {
+		trigger_notify('invalidate_user_cache', false);
+	}
 }
 

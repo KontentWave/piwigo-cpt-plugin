@@ -77,7 +77,7 @@ if (defined('IN_ADMIN'))
  */
 function core_privacy_toggle_init()
 {
-  global $conf, $user;
+  global $conf;
 
   // load plugin language file
   load_language('plugin.lang', CORE_PRIVACY_TOGGLE_PATH);
@@ -87,13 +87,9 @@ function core_privacy_toggle_init()
     ? safe_unserialize($conf['core_privacy_toggle'])
     : array();
 
-  // One-shot permission visibility cache bust flag: if set, invalidate then remove
-  if (!empty($_SESSION['cpt_permissions_changed'])) {
-    if (function_exists('invalidate_user_cache')) { invalidate_user_cache(); }
-    unset($_SESSION['cpt_permissions_changed']);
-  }
-
-  if (!empty($user['id'])) {
-    cpt_reconcile_private_owner_root_descendants_for_user((int) $user['id']);
-  }
+  // Cache invalidation happens once per save inside the update paths
+  // (cpt_flush_user_cache_invalidation); no per-request work is needed here.
+  // The former init-hook reconciliation (audit P1) ran a full catalog scan on
+  // every page view for every user, guests included, and was removed: privacy
+  // propagation is already enforced event-driven by cpt_update_album().
 }

@@ -249,7 +249,6 @@ function pwg_query($sql){
             foreach(explode(',', $assignments) as $pair){
                 if(strpos($pair,'=')!==false){ list($col,$val)=explode('=',$pair,2); $col=trim($col); $val=trim($val, "' "); $c[$col]=$val; }
             }
-            if (str_contains($assignments, "status='")) { $GLOBALS['__cpt_user_cache_purged']=true; }
         }} unset($c); return true;
     }
     if (preg_match('/DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id=(\d+)/',$sqlTrim,$m)){
@@ -408,6 +407,12 @@ function pwg_query($sql){
     if (preg_match('/DELETE FROM '.$prefixeTable.'user_cache/',$sqlTrim)){
         $GLOBALS['__cpt_db']['user_cache']=[]; $GLOBALS['__cpt_user_cache_purged']=true; return true;
     }
+    if (preg_match('/UPDATE '.$prefixeTable."user_cache\s+SET need_update = 'true'/",$sqlTrim)){
+        // Front-end fallback path of cpt_invalidate_user_cache()
+        $GLOBALS['__cpt_user_cache_purged']=true;
+        $GLOBALS['__cpt_user_cache_invalidations'] = ($GLOBALS['__cpt_user_cache_invalidations'] ?? 0) + 1;
+        return true;
+    }
     if (preg_match("/SHOW TABLES LIKE '([^']+)'/", $sqlTrim, $m)) {
         $table = stripslashes($m[1]);
         if ($table === CPT_OWNER_PROFILE_TABLE) {
@@ -448,8 +453,15 @@ function pwg_db_fetch_assoc($it){ if($it instanceof ArrayIterator){ if($it->vali
 function pwg_db_fetch_row($it){ return pwg_db_fetch_assoc($it); }
 function pwg_db_real_escape_string($s){ return addslashes($s); }
 
-// Cache invalidation no-ops
-if (!function_exists('invalidate_user_cache')) { function invalidate_user_cache(){} }
+// Cache invalidation stubs: record calls so tests can assert on the
+// debounced invalidation contract (once per save, always $full === false).
+if (!function_exists('invalidate_user_cache')) {
+    function invalidate_user_cache($full = true){
+        $GLOBALS['__cpt_user_cache_purged'] = true;
+        $GLOBALS['__cpt_user_cache_invalidations'] = ($GLOBALS['__cpt_user_cache_invalidations'] ?? 0) + 1;
+        $GLOBALS['__cpt_user_cache_invalidate_full_flags'][] = (bool) $full;
+    }
+}
 if (!function_exists('trigger_notify')) { function trigger_notify($e,$arg=null){} }
 
 // -------------------------------------------------------------------------
@@ -543,10 +555,15 @@ function cpt_test_reset_env(){
     if (isset($GLOBALS['__cpt_force_ownership_column'])) { unset($GLOBALS['__cpt_force_ownership_column']); }
     if (array_key_exists('__cpt_test_owner_profile_plugin_available', $GLOBALS)) { unset($GLOBALS['__cpt_test_owner_profile_plugin_available']); }
     if (array_key_exists('__cpt_ownership_column_cache', $GLOBALS)) { unset($GLOBALS['__cpt_ownership_column_cache']); }
+    unset($GLOBALS['__cpt_user_cache_purged'], $GLOBALS['__cpt_user_cache_dirty']);
+    $GLOBALS['__cpt_user_cache_invalidations'] = 0;
+    $GLOBALS['__cpt_user_cache_invalidate_full_flags'] = [];
 }
 
 function cpt_test_was_user_cache_purged(): bool { return !empty($GLOBALS['__cpt_user_cache_purged']); }
 function cpt_test_clear_user_cache_purge_flag(): void { unset($GLOBALS['__cpt_user_cache_purged']); }
+function cpt_test_user_cache_invalidation_count(): int { return (int) ($GLOBALS['__cpt_user_cache_invalidations'] ?? 0); }
+function cpt_test_user_cache_invalidate_full_flags(): array { return $GLOBALS['__cpt_user_cache_invalidate_full_flags'] ?? []; }
 function cpt_test_set_owner_profile_options(string $field_key, array $options): void {
     global $conf;
     $conf['core_privacy_toggle_owner_profile_options'][$field_key] = $options;
