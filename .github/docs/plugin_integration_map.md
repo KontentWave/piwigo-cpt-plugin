@@ -46,6 +46,7 @@
 - CPT recurses into descendants only for strict `private` owner-root toggles; a `shared` root leaves descendants untouched, and the init-hook reconciler later forces such trees fully private with an empty share list — silently discarding owner-configured shares.
 - CPT's classic profile POST path has no local CSRF check; it depends on core `profile.php` calling `check_pwg_token()` before `loc_begin_profile`. Re-hosting the handler on another hook would silently drop CSRF protection.
 - CPT's per-request `init` reconciliation performs full `categories` scans with N+1 lookups for every logged-in album owner on every page view — a shared-database load coupling affecting all plugins.
+- Core `invalidate_user_cache()` (admin/include/functions.php) TRUNCATEs both `user_cache` and `user_cache_categories` when called with defaults (`$full = true`); any plugin calling it on a user-triggered front-end action (as CPT does per album save) imposes gallery-wide permission recomputation on all plugins/users. Targeted invalidation requires `invalidate_user_cache(false)` or per-user `need_update` updates, and the function is not loaded on front-end requests without an explicit include.
 
 ## Last inspection notes
 
@@ -54,3 +55,4 @@
 - 2026-07-11: verified local Community now invalidates user/category cache after direct root-album creation and refreshes same-page selectors through `community.categories.getList`.
 - 2026-07-16: inspected the lingering Albums dropdown photo count after privatizing a Community user root. This is not owned by Community or the theme: core only renders the count, while CPT currently privatizes the selected root album without propagating status/access changes to descendant image-holder albums.
 - 2026-07-19: full production audit of CPT (see `.github/docs/audit/`). Verified core `profile.php` enforces `check_pwg_token()` before `loc_begin_profile` (CPT relies on it); confirmed CPT descendant propagation now exists for private owner roots but is non-transactional; flagged global `user_cache` DELETE and per-request reconciler as cross-plugin load risks; found CPT admin menu handler (`include/admin_events.inc.php`) is never included/registered, so the admin page link is unreachable.
+- 2026-07-19 (rev 2): audit corrected after external review — CPT's `init` reconciler also runs for guest requests (guests have a real user id via `$conf['guest_id']`); core `invalidate_user_cache()` truncates by default (see risky couplings); CPT repo CI workflows exist but are non-functional (monorepo paths, gitignored test suite).

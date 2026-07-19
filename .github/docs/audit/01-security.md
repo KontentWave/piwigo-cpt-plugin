@@ -33,15 +33,16 @@ hardening and abuse-resistance issues.
 
 ## Findings
 
-### S1 — MEDIUM — Non-JS profile POST relies entirely on core's token check (implicit contract)
+### S1 — LOW — Non-JS profile POST relies entirely on core's token check (implicit contract)
 
 [include/functions.inc.php L24-L29](../../../include/functions.inc.php#L24-L29)
 
 `cpt_setup_ucp_tabs()` processes `$_POST['cpt_album']` with **no local token check**.
-Today this is safe only because `profile.php` calls `check_pwg_token()` first. If the
-handler is ever attached to another hook (it already runs three index-page hooks), or a
-theme triggers `loc_begin_profile` outside `profile.php`, the write path becomes
-CSRF-able silently.
+Today this is safe because `profile.php` calls `check_pwg_token()` for any non-empty
+`$_POST` before firing `loc_begin_profile` — there is no current exposure. The risk is
+latent: if the handler is ever attached to another hook (it already runs three
+index-page hooks), or a theme triggers `loc_begin_profile` outside `profile.php`, the
+write path becomes CSRF-able silently.
 
 **Recommendation:** add an explicit `check_pwg_token()` (or a soft token comparison
 that aborts with an error) inside `cpt_setup_ucp_tabs()` before calling
@@ -103,11 +104,21 @@ recomputation per user per request).
 
 **Recommendation:**
 
-- Rely on Piwigo's `invalidate_user_cache()` (already called) which flips
-  `user_cache.need_update` — that is the sanctioned mechanism; drop the raw `DELETE`.
-- If a hard purge is truly required, restrict it to the affected users
-  (owner + shared users + guest) or debounce it.
+- Use **targeted** invalidation: mark only affected users for rebuild
+  (`UPDATE user_cache SET need_update='true' WHERE user_id IN (owner, shared users,
+guest)`), or call core's `invalidate_user_cache(false)` (sets `need_update` for all
+  users without truncating). ⚠️ Do **not** simply call `invalidate_user_cache()` with
+  defaults: in Piwigo 15 `$full = true` **TRUNCATEs both** `user_cache` and
+  `user_cache_categories` — heavier than the plugin's current raw `DELETE`. Note also
+  that the function lives in `admin/include/functions.php`, which is not loaded on
+  front-end requests — the plugin must `include_once` it or issue the targeted SQL
+  itself.
+- Do not just delete `cpt_purge_user_cache()` — without a replacement invalidation,
+  other users keep stale visibility.
 - Consider a lightweight rate limit / cooldown on privacy toggles per user.
+- Note the save-all amplification: `cpt_handle_album_form()` always includes `status`
+  in updates, so a single "Save Changes" for N albums triggers up to N gallery-wide
+  purges (see [02-performance-optimization.md](02-performance-optimization.md) §P4).
 
 ### S6 — MEDIUM — `cpt_update_album()` interpolates column names from array keys
 

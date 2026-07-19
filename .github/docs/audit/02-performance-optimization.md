@@ -9,13 +9,15 @@ or thousands of users. One pattern (P1) runs on **every request**.
 
 ## Findings
 
-### P1 — HIGH — Full-catalog reconciliation runs on every page load for every logged-in user
+### P1 — HIGH — Full-catalog reconciliation runs on every page load for every user (guests included)
 
 [main.inc.php L96-L98](../../../main.inc.php#L96-L98) → `cpt_reconcile_private_owner_root_descendants_for_user()`
 ([include/functions.inc.php L1135-L1166](../../../include/functions.inc.php#L1135-L1166))
 
-The `init` handler calls the reconciler for the current user on _every_ request. Per
-request it executes:
+The `init` handler calls the reconciler for the current user on _every_ request.
+**This includes anonymous visitors:** Piwigo assigns guests a real user id
+(`$conf['guest_id']`, default 2), so `!empty($user['id'])` is true for guest requests
+too — every anonymous page view pays the full scan below. Per request it executes:
 
 1. `cpt_fetch_albums_owned_by()` — `SELECT id, name, comment, status FROM categories
 ORDER BY id ASC` (**entire table**), then per row:
@@ -75,18 +77,29 @@ SELECT id FROM categories WHERE uppercats LIKE '<escaped_uppercats>,%'
 **one** `UPDATE ... WHERE id IN (...)` instead of one `UPDATE ... LIMIT 1` per
 descendant ([functions.inc.php L1199-L1213](../../../include/functions.inc.php#L1199-L1213)).
 
-### P4 — HIGH — Full `user_cache` DELETE on every privacy change
+### P4 — HIGH — Gallery-wide cache wipe on every privacy change (twice)
 
 [include/functions.inc.php L1300-L1310](../../../include/functions.inc.php#L1300-L1310)
 
 See [01-security.md](01-security.md) §S5 for the abuse angle. Purely as performance:
-after each toggle, _every_ user's next request pays the permission-recomputation cost,
-plus the plugin also calls `invalidate_user_cache()` (which already marks rows for
-rebuild) — the raw `DELETE` is redundant work with gallery-wide fallout. It also runs
+after each toggle, _every_ user's next request pays the permission-recomputation cost.
+The damage is doubled: besides the raw `DELETE FROM user_cache`, the plugin also calls
+`invalidate_user_cache()` — and in Piwigo 15 that function's default (`$full = true`)
+**TRUNCATEs both `user_cache` and `user_cache_categories`** (it only sets
+`need_update` when called with `false`). `cpt_purge_user_cache()` additionally runs
 `SHOW TABLES LIKE` on every invocation.
 
-**Recommendation:** delete the function body down to `invalidate_user_cache()`. If a
-targeted purge is needed, scope it to affected user ids.
+Amplification: `cpt_handle_album_form()` unconditionally puts `status` into `$updates`
+for every album in the payload, and the JS save submits **all** albums — so one "Save
+Changes" click over N albums performs up to N full gallery-wide wipes.
+
+**Recommendation:** replace both mechanisms with **targeted** invalidation
+(`UPDATE user_cache SET need_update='true' WHERE user_id IN (...)` for owner + shared
+users + guest), or at minimum `invalidate_user_cache(false)` once per request
+(debounced after the album loop, not per album). Do not remove `cpt_purge_user_cache()`
+without a replacement — stale permissions would persist for other users. Remember
+`invalidate_user_cache()` is defined in `admin/include/functions.php` and needs an
+explicit include on front-end paths.
 
 ### P5 — LOW — Repeated single-row lookups already answerable from prior results
 
@@ -141,11 +154,11 @@ config (see [01-security.md](01-security.md) §S8).
 
 ## Quick-win summary
 
-| Fix                                                     | Effort  | Impact                   |
-| ------------------------------------------------------- | ------- | ------------------------ |
-| Remove `init` reconciliation (P1)                       | Trivial | Site-wide, every request |
-| Drop raw `user_cache` DELETE (P4)                       | Trivial | Site-wide after toggles  |
-| Hoist `cpt_get_shareable_user_options` out of loop (P5) | Trivial | Save path                |
-| Single script injection (P6)                            | Small   | Profile page weight      |
-| Batch album fetch (P2)                                  | Medium  | Profile page latency     |
-| Indexed descendant lookup (P3)                          | Small   | Toggle latency           |
+| Fix                                                     | Effort  | Impact                                |
+| ------------------------------------------------------- | ------- | ------------------------------------- |
+| Remove `init` reconciliation (P1)                       | Trivial | Site-wide, every request incl. guests |
+| Targeted cache invalidation, debounced per request (P4) | Small   | Site-wide after toggles               |
+| Hoist `cpt_get_shareable_user_options` out of loop (P5) | Trivial | Save path                             |
+| Single script injection (P6)                            | Small   | Profile page weight                   |
+| Batch album fetch (P2)                                  | Medium  | Profile page latency                  |
+| Indexed descendant lookup (P3)                          | Small   | Toggle latency                        |

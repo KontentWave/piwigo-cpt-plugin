@@ -29,10 +29,12 @@ The dominant production risks are **not** classic injection/XSS holes — they a
 
 1. **A per-request reconciliation job in the `init` hook** that scans the whole
    `categories` table with N+1 follow-up queries on _every page load for every
-   logged-in user_ (performance, scalability, availability). See
+   user — anonymous guests included_, since Piwigo assigns guests a real user id
+   (performance, scalability, availability). See
    [02-performance-optimization.md](02-performance-optimization.md) §P1.
-2. **Full `user_cache` table deletion** triggered by a non-admin user action
-   (self-inflicted DoS vector on large galleries). See
+2. **Gallery-wide cache wipe on every privacy change** — both the raw `user_cache`
+   `DELETE` and the `invalidate_user_cache()` call (which TRUNCATEs by default in
+   Piwigo 15), amplified up to N× by save-all submissions. See
    [01-security.md](01-security.md) §S5 and [02-performance-optimization.md](02-performance-optimization.md) §P4.
 3. **Silent-failure error model** — every DB failure returns `null`/`false`/`[]`
    with no logging, and multi-statement privacy transitions are not transactional,
@@ -43,18 +45,21 @@ The dominant production risks are **not** classic injection/XSS holes — they a
 
 ## Findings at a glance
 
-| Severity | Count | Highlights                                                                                                                                                                                                                                                                                                                          |
-| -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Critical | 0     | —                                                                                                                                                                                                                                                                                                                                   |
-| High     | 3     | Per-request full scan in `init` (P1); global `user_cache` purge as DoS vector (S5/P4); non-transactional privacy propagation (R2)                                                                                                                                                                                                   |
-| Medium   | 9     | pwg_token in GET URL (S2); user enumeration via shareable-user list (S3); hardcoded webmaster id 1 (S4); no column whitelist in `cpt_update_album` (S6); N+1 queries on profile page (P2); double script injection (P6); silent DB failures (R1); misleading session-flag mechanism (R4); monolithic 1,317-line functions file (M1) |
-| Low      | 14+   | See individual documents                                                                                                                                                                                                                                                                                                            |
-| Info     | 10+   | Legacy inventory, dead code, doc drift                                                                                                                                                                                                                                                                                              |
+| Severity | Count | Highlights                                                                                                                                                                                                                                                                                                                                                              |
+| -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Critical | 0     | —                                                                                                                                                                                                                                                                                                                                                                       |
+| High     | 3     | Per-request full scan in `init` (P1); global `user_cache` purge as DoS vector (S5/P4); non-transactional privacy propagation (R2)                                                                                                                                                                                                                                       |
+| Medium   | 10    | pwg_token in GET URL (S2); user enumeration via shareable-user list (S3); hardcoded webmaster id 1 (S4); no column whitelist in `cpt_update_album` (S6); N+1 queries on profile page (P2); double script injection (P6); silent DB failures (R1); misleading session-flag mechanism (R4); monolithic 1,317-line functions file (M1); CI present but non-functional (M3) |
+| Low      | 14+   | See individual documents                                                                                                                                                                                                                                                                                                                                                |
+| Info     | 10+   | Legacy inventory, dead code, doc drift                                                                                                                                                                                                                                                                                                                                  |
 
 ## Top 10 prioritized recommendations
 
 1. **Remove or gate the `init`-hook reconciliation** (`cpt_reconcile_private_owner_root_descendants_for_user`) behind an event-driven trigger or a cheap sentinel check — do not run it on every request. (High, P1)
-2. **Replace `cpt_purge_user_cache()` full-table `DELETE`** with Piwigo's sanctioned `invalidate_user_cache()` mechanism only. (High, S5/P4)
+2. **Replace the gallery-wide cache wipe with targeted invalidation** — per-user
+   `need_update='true'` rows or `invalidate_user_cache(false)`, debounced once per
+   request. ⚠️ Core's `invalidate_user_cache()` default TRUNCATEs; do not delete
+   `cpt_purge_user_cache()` without a replacement. (High, S5/P4)
 3. **Wrap privacy transitions (status + descendants + `user_access` sync) in a transaction** or at least an ordered, verified sequence with rollback-on-failure. (High, R2)
 4. **Move `pwg_token` out of the GET query string** in `js/ucp_tabs.js` (`loadRepresentativeOptions`) — use POST. (Medium, S2)
 5. **Introduce the custom exception hierarchy + boundary handlers** defined in [06-error-handling.md](06-error-handling.md); log every swallowed DB failure. (Medium)
@@ -69,3 +74,19 @@ The dominant production risks are **not** classic injection/XSS holes — they a
 Manual line-by-line review of all PHP/JS/TPL/CSS files, cross-referenced against Piwigo
 core behavior (`profile.php` token handling, `ws.php` slashes handling, `user_cache`
 semantics) and the plugin's own test suite. No dynamic scanning was performed.
+
+## Revision history
+
+- **2026-07-19 (rev 2)** — corrections after external review (ChatGPT "Sol") and
+  re-verification against code/core/git:
+  - P1 broadened: reconciler also runs for **guest** requests (`$conf['guest_id']`
+    gives guests a real user id); save-all submissions amplify the cache wipe N×.
+  - S5/P4/R4 fix corrected: core `invalidate_user_cache()` **TRUNCATEs by default**
+    in Piwigo 15 (only `false` sets `need_update`); recommend targeted invalidation,
+    not removal of the purge.
+  - S1 downgraded Medium → Low (core `profile.php` token check covers current wiring).
+  - M3 rewritten: CI workflows **do exist** but are non-functional (wrong monorepo
+    paths, gitignored `tests/`/`phpunit.xml.dist`, unreachable Cypress base URL).
+  - M7/M9/L5 corrected: all 8 locales ship lang files; `vendor/`/`tools/` are
+    gitignored, not committed; the gitignored **test suite** is the real repo gap.
+- **2026-07-19 (rev 1)** — initial audit.

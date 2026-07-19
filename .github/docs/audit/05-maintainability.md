@@ -30,16 +30,24 @@ review scope per change dramatically.
 **Recommendation:** adopt PER-CS/PSR-12 via `friendsofphp/php-cs-fixer` or `phpcbf`
 (dev dependency), plus Prettier for JS/CSS. One-time reformat commit, then CI check.
 
-### M3 — LOW — No static analysis or CI configuration in the plugin
+### M3 — MEDIUM — CI present but non-functional
 
-composer.json declares only PHPUnit. There is no PHPStan/Psalm, no lint step, no
-`.github/workflows` for the plugin (the README claims "Cypress workflow scaffold in
-CI"; nothing in the tree provides it).
+Workflows exist ([phpunit.yml](../../workflows/phpunit.yml), [cypress.yml](../../workflows/cypress.yml)) but cannot succeed as configured:
 
-**Recommendation:** add `phpstan/phpstan` (level 6 is attainable — the code already
-uses scalar type hints and nullable returns) with a Piwigo core stub file for
-`pwg_query`/`l10n`/etc., and a GitHub Actions workflow running phpstan + phpunit +
-cs-check.
+- Both trigger on and reference monorepo paths (`albums/plugins/core_privacy_toggle/**`)
+  that do not exist in this repository — the repo root **is** the plugin, so the path
+  filters never match and the phpunit config path is wrong.
+- [.gitignore](../../../.gitignore) excludes **`/tests/` and `phpunit.xml.dist`** — the repository contains
+  no test suite at all, so even with corrected paths the PHPUnit job has nothing to run.
+- The Cypress job depends on `_qa/cypress/**` (lives in the Piwigo monorepo, not this
+  repo) and defaults to `https://piwigo.local/albums`, unreachable from GitHub runners.
+- Consequently the audit commit shows zero checks/runs.
+
+**Recommendation:** track `tests/` and `phpunit.xml.dist` in git; fix workflow paths to
+repo-root layout; either vendor the Cypress suite into this repo with a CI-provisioned
+Piwigo instance or move that workflow to the monorepo where `_qa/cypress` lives. Then
+add `phpstan/phpstan` (level 6 is attainable — the code already uses scalar type hints
+and nullable returns) with a Piwigo core stub file, plus a cs-check step.
 
 ### M4 — MEDIUM — Documentation drift and misleading comments
 
@@ -95,10 +103,8 @@ municipality) — dead test scaffolding (X7/L6).
 
 [language/en_UK/plugin.lang.php](../../../language/en_UK/plugin.lang.php) contains ~70 keys with no consumer in the
 codebase (owner-profile vocabulary: Nationality, Measurements, availability weekdays,
-service descriptions, etc.). Some translated locales (`fr_FR`, `hu_HU`, `ru_RU`,
-`sk_SK`, `uk_UA`, `zh_CN`) ship folders — `fr_FR` has no `plugin.lang.php` in the
-listing; verify each locale actually contains the file it advertises. Unused keys
-multiply translator effort across 8 locales.
+service descriptions, etc.). All 8 locales ship `plugin.lang.php` files ✔ — which
+means the unused keys multiply translator effort eightfold.
 
 ### M8 — INFO — Naming & API notes
 
@@ -112,11 +118,12 @@ multiply translator effort across 8 locales.
 
 ### M9 — INFO — Repository artifacts
 
-- [tools/https\_\_\_piwigo.local_albums_profile.html](../../../tools/https___piwigo.local_albums_profile.html) — captured page snapshot
-  committed to the repo; move to docs/fixtures or delete (also a PEM-package bloat and
-  potential information-leak concern: it is a crawl of a real local gallery).
-- `vendor/` is committed (PHPUnit + transitive deps). For a distributed Piwigo plugin,
-  ship without dev vendor/ (PEM package) — add `.gitattributes` export-ignore or build
-  script.
+- `vendor/`, `tools/`, `tests/`, and `phpunit.xml.dist` are **gitignored** (present
+  only in the working tree). Good for vendor/tools; **wrong for the test suite** —
+  the published repo carries no tests and CI cannot run them (see M3). Track `tests/`
+  and `phpunit.xml.dist`.
+- [tools/https\_\_\_piwigo.local_albums_profile.html](../../../tools/https___piwigo.local_albums_profile.html) — captured crawl of a real
+  local gallery page in the working tree; untracked, but delete locally to avoid
+  accidental future inclusion (information-leak concern).
 - [pem_metadata.txt](../../../pem_metadata.txt) — keep in sync with main.inc.php header on release (add a
   release checklist).

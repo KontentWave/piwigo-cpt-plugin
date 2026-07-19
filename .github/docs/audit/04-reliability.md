@@ -81,8 +81,9 @@ _owner's own_ session. Other users are actually covered by the `user_cache` purg
 does not.
 
 **Recommendation:** remove the session flag (and its `init` consumer) once the
-`invalidate_user_cache()`-only strategy from P4 is adopted; core's `need_update`
-mechanism already covers all sessions correctly.
+targeted-invalidation strategy from P4 is adopted (per-user `need_update` rows, or
+`invalidate_user_cache(false)` — note core's default `$full = true` truncates rather
+than marks); that mechanism covers all sessions correctly.
 
 ### R5 — LOW — Concurrency: no locking on read-modify-write
 
@@ -116,9 +117,11 @@ Positive observations worth preserving:
 - Folder-rename guard in [main.inc.php L19-L28](../../../main.inc.php#L19-L28) ✔
 
 Gap: these fallbacks are exercised only by the regex-based SQL emulator in tests, not
-against a real Piwigo + MySQL (see M6). A smoke-test Cypress/integration lane against a
-live instance would materially raise dependability confidence (README claims a Cypress
-scaffold exists in CI — none is present in the plugin tree).
+against a real Piwigo + MySQL (see M6). CI workflows for PHPUnit and Cypress **do
+exist** ([.github/workflows](../../workflows/phpunit.yml)) but are currently non-functional (wrong monorepo
+paths, missing tracked test suite, unreachable base URL — see M3); repairing them and
+running a smoke lane against a live instance would materially raise dependability
+confidence.
 
 ### R8 — INFO — `filemtime`/`realpath` failure modes
 
