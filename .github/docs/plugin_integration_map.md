@@ -3,7 +3,7 @@
 ## Plugin dependency map
 
 - `core_privacy_toggle`: not in the controlling path for Community upload target selection; descendant-album filtering here does not drive Community's `add_photos` selector.
-- `core_privacy_toggle`: does own the non-admin album privacy action for Community-owned user trees, but its current toggle/update path applies privacy only to the selected album id and does not propagate that state to descendant image-holder albums.
+- `core_privacy_toggle`: does own the non-admin album privacy action for Community-owned user trees; `cpt_update_album()` now propagates `private` status (mode strictly `private`) to descendants when the toggled album is the effective owner root, and an `init`-hook reconciler heals private roots with non-private descendants. `shared` mode does NOT propagate to descendants.
 - `community`: owns user-root album creation, upload/create permission computation, session permission caching, and the upload-page selector refresh path.
 - `two_factor`: participates only at the authenticated-session boundary by redirecting to `identification.php?tf` and now clearing Community-owned session permission caches before and after validation.
 
@@ -17,7 +17,7 @@
 ## Shared database tables
 
 - `categories`: Community marks user root albums with `community_user` and computes descendant upload targets from the category tree.
-- `categories`: CPT currently updates privacy with a single-row `UPDATE ... WHERE id = <album_id>` and does not mirror core's recursive `set_cat_status()` / `get_subcat_ids()` path for descendant albums.
+- `categories`: CPT updates privacy with per-row `UPDATE ... WHERE id = ... LIMIT 1` statements (parent + one per descendant when propagating) instead of core's recursive `set_cat_status()` / `get_subcat_ids()`; descendant discovery scans the whole `categories` table and the sequence is non-transactional.
 - `user_cache_categories`: Community category visibility depends on this core cache table being refreshed after root-album creation.
 - `user_infos`: `two_factor` clears lockout state here during successful post-validation login completion.
 
@@ -30,7 +30,7 @@
 
 - `plugins/community/include/functions_community.inc.php`: computes `community_user_permissions`, auto-creates user root albums, and stores Community session cache keys.
 - `plugins/community/template/add_photos.tpl`: client-side upload form, selector refresh, and upload-start validation logic.
-- `plugins/core_privacy_toggle/include/functions.inc.php`: `cpt_update_album()` invalidates cache and syncs `user_access`, but only for the current album id; no descendant status/access propagation is performed.
+- `plugins/core_privacy_toggle/include/functions.inc.php`: `cpt_update_album()` invalidates cache, syncs `user_access` for the album and (for owner-root private toggles) all descendants, and hard-purges the whole `user_cache` table via `cpt_purge_user_cache()` — a gallery-wide cost shared with every plugin/user.
 - `plugins/two_factor/includes/events.inc.php`: `tf_try_log_user()` marks the session unvalidated and clears integrated plugin caches.
 - `plugins/two_factor/includes/functions.inc.php`: `tf_login_and_redirect()` clears Two Factor state and integrated plugin caches before redirecting to the gallery.
 - `include/menubar.inc.php`: core renders the Albums dropdown summary from `$user['nb_total_images']`, independent of whether any top-level album node remains visible in the menu tree.
@@ -43,7 +43,9 @@
 - Community's upload-page selector must use `community.categories.getList`; falling back to generic `pwg.categories.getList` can reintroduce the top-level container album after same-page child-album creation.
 - The upload UI remains deceptively usable unless validation is bound to the actual `#startUpload` control instead of dead selectors.
 - A private Community root with still-public descendants produces a confusing state: the menu tree can become empty because the private root is hidden, while core still shows a non-zero Albums photo count from descendant public photos through `$user['nb_total_images']`.
-- Because CPT owns the owner-facing privacy toggle but does not currently recurse into descendants, the user can believe a whole user tree was privatized when only the container album changed state.
+- CPT recurses into descendants only for strict `private` owner-root toggles; a `shared` root leaves descendants untouched, and the init-hook reconciler later forces such trees fully private with an empty share list — silently discarding owner-configured shares.
+- CPT's classic profile POST path has no local CSRF check; it depends on core `profile.php` calling `check_pwg_token()` before `loc_begin_profile`. Re-hosting the handler on another hook would silently drop CSRF protection.
+- CPT's per-request `init` reconciliation performs full `categories` scans with N+1 lookups for every logged-in album owner on every page view — a shared-database load coupling affecting all plugins.
 
 ## Last inspection notes
 
@@ -51,3 +53,4 @@
 - 2026-07-11: verified local `two_factor` now clears Community session caches in both `tf_try_log_user()` and `tf_login_and_redirect()`.
 - 2026-07-11: verified local Community now invalidates user/category cache after direct root-album creation and refreshes same-page selectors through `community.categories.getList`.
 - 2026-07-16: inspected the lingering Albums dropdown photo count after privatizing a Community user root. This is not owned by Community or the theme: core only renders the count, while CPT currently privatizes the selected root album without propagating status/access changes to descendant image-holder albums.
+- 2026-07-19: full production audit of CPT (see `.github/docs/audit/`). Verified core `profile.php` enforces `check_pwg_token()` before `loc_begin_profile` (CPT relies on it); confirmed CPT descendant propagation now exists for private owner roots but is non-transactional; flagged global `user_cache` DELETE and per-request reconciler as cross-plugin load risks; found CPT admin menu handler (`include/admin_events.inc.php`) is never included/registered, so the admin page link is unreachable.
