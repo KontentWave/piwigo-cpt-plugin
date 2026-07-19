@@ -28,6 +28,7 @@ $lang['This album is currently public.'] = 'This album is currently public.';
 $lang['Change the album to private'] = 'Change the album to private';
 $lang['Change the album to public'] = 'Change the album to public';
 $lang['Album privacy updated.'] = 'Album privacy updated.';
+$lang['Album privacy update failed. No changes were saved.'] = 'Album privacy update failed. No changes were saved.';
 $lang['Status'] = 'Status';
 $lang['How it works'] = 'How it works';
 $lang['Users can manage their albums from their profile page'] = 'Users can manage their albums from their profile page';

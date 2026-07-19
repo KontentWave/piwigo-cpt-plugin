@@ -158,4 +158,42 @@ class PrivacyToggleTest extends TestCase
         $this->assertSame(0, cpt_test_user_cache_invalidation_count(),
             'Editing name/comment without a privacy transition must not touch the user cache');
     }
+
+    public function testFailedPermissionSyncRollsBackPrivacyTransition()
+    {
+        cpt_test_set_user(20);
+        $albumId = cpt_test_create_owned_album(20, 'public', 'Rollback', '');
+
+        $GLOBALS['__cpt_test_fail_sql_pattern'] = '/^INSERT INTO '.USER_ACCESS_TABLE.'/';
+        $ok = cpt_update_album($albumId, ['status' => 'private'], false, ['mode' => 'private', 'shared_user_ids' => []], 20);
+        unset($GLOBALS['__cpt_test_fail_sql_pattern']);
+
+        $this->assertFalse($ok, 'Update must report failure when user_access sync fails');
+        $this->assertSame('public', cpt_test_get_category($albumId)['status'],
+            'Status change must roll back when the user_access INSERT fails — otherwise the owner is locked out');
+        $this->assertSame([], cpt_test_get_user_access($albumId));
+        cpt_flush_user_cache_invalidation();
+        $this->assertSame(0, cpt_test_user_cache_invalidation_count(),
+            'A rolled-back transition must not invalidate the user cache');
+    }
+
+    public function testFailedDescendantPropagationRollsBackRoot()
+    {
+        $GLOBALS['__cpt_force_ownership_column'] = 'community_user';
+        cpt_test_set_user(21);
+
+        $root = cpt_test_create_community_owned_album(21, 'public', 'Root', '');
+        $child = cpt_test_create_child_album($root, 'public', 'Child', '');
+
+        $GLOBALS['__cpt_test_fail_sql_pattern'] = '/^UPDATE '.CATEGORIES_TABLE." SET status='private' WHERE id=".$child.' LIMIT 1$/';
+        $ok = cpt_update_album($root, ['status' => 'private'], false, [], 21);
+        unset($GLOBALS['__cpt_test_fail_sql_pattern']);
+
+        $this->assertFalse($ok, 'Update must report failure when descendant propagation fails');
+        $this->assertSame('public', cpt_test_get_category($root)['status'],
+            'Root status must roll back when a descendant update fails — no private root with public descendants');
+        $this->assertSame('public', cpt_test_get_category($child)['status']);
+        $this->assertSame([], cpt_test_get_user_access($root));
+        $this->assertSame([], cpt_test_get_user_access($child));
+    }
 }

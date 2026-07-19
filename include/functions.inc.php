@@ -149,9 +149,12 @@ function cpt_handle_album_page_toggle(): void
 	$should_reconcile_descendants = $current_status === $target_status
 		&& cpt_should_propagate_private_status_to_descendants($album_id, array('status' => $target_status), array(), $user_id);
 	if ($current_status !== $target_status || $should_reconcile_descendants) {
-		cpt_update_album($album_id, array('status' => $target_status), false, array(), $user_id);
-		cpt_flush_user_cache_invalidation();
-		$_SESSION['page_infos'][] = l10n('Album privacy updated.');
+		if (cpt_update_album($album_id, array('status' => $target_status), false, array(), $user_id)) {
+			cpt_flush_user_cache_invalidation();
+			$_SESSION['page_infos'][] = l10n('Album privacy updated.');
+		} else {
+			$_SESSION['page_errors'][] = l10n('Album privacy update failed. No changes were saved.');
+		}
 	}
 
 	redirect(duplicate_index_url());
@@ -809,8 +812,12 @@ function cpt_handle_album_form(array $payload, int $user_id): bool
 
         if (!empty($updates)) {
 			if ($debug_admin) { global $page; $page['infos'][] = '[CPT debug] updating album '.$album_id.' fields: '.implode(',', array_keys($updates)); }
-			cpt_update_album($album_id, $updates, $debug_admin, $permission_options, $user_id);
-            $updated_any = true;
+			if (cpt_update_album($album_id, $updates, $debug_admin, $permission_options, $user_id)) {
+				$updated_any = true;
+			} else {
+				global $page;
+				$page['errors'][] = l10n('Album privacy update failed. No changes were saved.').' (#'.$album_id.')';
+			}
         }
 
 		if ($representative_requested && cpt_update_album_representative($album_id, $representative_picture_id, $user_id)) {
@@ -1074,7 +1081,7 @@ function cpt_should_propagate_private_status_to_descendants(int $album_id, array
 	return cpt_get_effective_owner_root_album_id_for_album($album_id) === $album_id;
 }
 
-function cpt_sync_album_visibility_permissions(int $album_id, string $new_status, array $permission_options = [], ?int $owner_user_id = null, bool $debug = false): bool
+function cpt_sync_album_visibility_permissions(int $album_id, string $new_status, array $permission_options = [], ?int $owner_user_id = null, bool $debug = false): ?bool
 {
 	$mode = $permission_options['mode'] ?? ($new_status === 'private' ? 'private' : 'public');
 	$shared_user_ids = [];
@@ -1114,14 +1121,18 @@ function cpt_sync_album_visibility_permissions(int $album_id, string $new_status
 			return false;
 		}
 
-		pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int) $album_id);
+		if (!pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int) $album_id)) {
+			return null;
+		}
 		$insValues = [];
 		foreach ($allowed_user_ids as $allowed_user_id) {
 			$insValues[] = '('.(int) $allowed_user_id.','.(int) $album_id.')';
 		}
 		if (!empty($insValues)) {
 			$permSql = 'INSERT INTO '.USER_ACCESS_TABLE.' (user_id, cat_id) VALUES '.implode(',', $insValues);
-			pwg_query($permSql);
+			if (!pwg_query($permSql)) {
+				return null;
+			}
 			if ($debug) {
 				global $page;
 				$page['infos'][] = '[CPT debug] Permissions synced: '.htmlspecialchars($permSql);
@@ -1134,7 +1145,9 @@ function cpt_sync_album_visibility_permissions(int $album_id, string $new_status
 		if (empty($current_user_ids)) {
 			return false;
 		}
-		pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int) $album_id);
+		if (!pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int) $album_id)) {
+			return null;
+		}
 		if ($debug) {
 			global $page;
 			$page['infos'][] = '[CPT debug] Cleared user_access rows for now-public album '.$album_id;
@@ -1199,8 +1212,9 @@ function cpt_reconcile_private_owner_root_descendants_for_user(int $user_id): bo
 			continue;
 		}
 
-		cpt_update_album($album_id, ['status' => 'private'], false, ['mode' => 'private', 'shared_user_ids' => []], $user_id);
-		$checked_user_ids[$user_id] = true;
+		if (cpt_update_album($album_id, ['status' => 'private'], false, ['mode' => 'private', 'shared_user_ids' => []], $user_id)) {
+			$checked_user_ids[$user_id] = true;
+		}
 	}
 
 	cpt_flush_user_cache_invalidation();
@@ -1219,12 +1233,13 @@ function cpt_get_album_explicit_owner_id(int $album_id): ?int
 /**
  * Low-level update helper. Uses simple dynamic SQL since Piwigo core often builds strings; ensured safe via escaping above.
  */
-function cpt_update_album(int $album_id, array $fields, bool $debug=false, array $permission_options = [], ?int $owner_user_id = null): void
+function cpt_update_album(int $album_id, array $fields, bool $debug=false, array $permission_options = [], ?int $owner_user_id = null): bool
 {
-	if (empty($fields)) { return; }
+	if (empty($fields)) { return false; }
 	$old_status = null;
 	$privacy_target_album_ids = [$album_id];
-	if (isset($fields['status'])) {
+	$is_privacy_update = isset($fields['status']);
+	if ($is_privacy_update) {
 		// Fetch previous status to detect transition
 		$resPrev = pwg_query('SELECT status FROM '.CATEGORIES_TABLE.' WHERE id='.(int)$album_id.' LIMIT 1');
 		if ($resPrev) { $r = pwg_db_fetch_assoc($resPrev); $old_status = $r['status'] ?? null; }
@@ -1237,45 +1252,104 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false, array
 		$assignments[] = $col . "='" . pwg_db_real_escape_string($val) . "'";
 	}
 	$sql = 'UPDATE '.CATEGORIES_TABLE.' SET '.implode(',', $assignments).' WHERE id='.(int)$album_id.' LIMIT 1';
+
+	// Privacy transitions span several statements (parent + descendants +
+	// user_access sync); run them atomically so a mid-sequence failure cannot
+	// leave a private album without access rows or a private root with public
+	// descendants (audit R2).
+	$in_transaction = $is_privacy_update && cpt_db_begin();
+
 	$result = pwg_query($sql);
 	if ($debug) { global $page; $page['infos'][] = '[CPT debug] SQL: '.htmlspecialchars($sql).' result='.($result?'ok':'fail'); }
-	if ($result) {
-		if (isset($fields['status']) && count($privacy_target_album_ids) > 1) {
-			$escaped_status = pwg_db_real_escape_string($fields['status']);
-			foreach ($privacy_target_album_ids as $target_album_id) {
-				if ($target_album_id === $album_id) {
-					continue;
-				}
+	if (!$result) {
+		return cpt_update_album_fail($in_transaction, $album_id, 'album row update failed');
+	}
 
-				$descendant_sql = 'UPDATE '.CATEGORIES_TABLE." SET status='".$escaped_status."' WHERE id=".(int) $target_album_id.' LIMIT 1';
-				pwg_query($descendant_sql);
-				if ($debug) {
-					global $page;
-					$page['infos'][] = '[CPT debug] Propagated privacy SQL: '.htmlspecialchars($descendant_sql);
-				}
-			}
-		}
+	if (!$is_privacy_update) {
+		return true;
+	}
 
-		// Synchronize permissions for private/public transitions
-		if (isset($fields['status']) && ($old_status !== $fields['status'] || !empty($permission_options) || count($privacy_target_album_ids) > 1)) {
-			$new_status = $fields['status'];
-			$permissions_changed = false;
-			foreach ($privacy_target_album_ids as $target_album_id) {
-				$target_permission_options = $target_album_id === $album_id
-					? $permission_options
-					: ['mode' => 'private', 'shared_user_ids' => []];
-				if (cpt_sync_album_visibility_permissions($target_album_id, $new_status, $target_permission_options, $owner_user_id, $debug)) {
-					$permissions_changed = true;
-				}
+	if (count($privacy_target_album_ids) > 1) {
+		$escaped_status = pwg_db_real_escape_string($fields['status']);
+		foreach ($privacy_target_album_ids as $target_album_id) {
+			if ($target_album_id === $album_id) {
+				continue;
 			}
-			if ($old_status !== $fields['status'] || $permissions_changed) {
-				if (function_exists('trigger_notify')) { trigger_notify('CPT_after_privacy_change', $album_id); }
-				// Defer cache invalidation: callers flush once after the complete save
-				// (audit P4/S5 — one invalidation per request, not per album).
-				cpt_mark_user_cache_dirty();
+
+			$descendant_sql = 'UPDATE '.CATEGORIES_TABLE." SET status='".$escaped_status."' WHERE id=".(int) $target_album_id.' LIMIT 1';
+			if (!pwg_query($descendant_sql)) {
+				return cpt_update_album_fail($in_transaction, $album_id, 'descendant propagation failed for album '.$target_album_id);
+			}
+			if ($debug) {
+				global $page;
+				$page['infos'][] = '[CPT debug] Propagated privacy SQL: '.htmlspecialchars($descendant_sql);
 			}
 		}
 	}
+
+	// Synchronize permissions for private/public transitions
+	$permissions_changed = false;
+	if ($old_status !== $fields['status'] || !empty($permission_options) || count($privacy_target_album_ids) > 1) {
+		$new_status = $fields['status'];
+		foreach ($privacy_target_album_ids as $target_album_id) {
+			$target_permission_options = $target_album_id === $album_id
+				? $permission_options
+				: ['mode' => 'private', 'shared_user_ids' => []];
+			$sync_result = cpt_sync_album_visibility_permissions($target_album_id, $new_status, $target_permission_options, $owner_user_id, $debug);
+			if ($sync_result === null) {
+				return cpt_update_album_fail($in_transaction, $album_id, 'user_access sync failed for album '.$target_album_id);
+			}
+			if ($sync_result === true) {
+				$permissions_changed = true;
+			}
+		}
+	}
+
+	if ($in_transaction && !cpt_db_commit()) {
+		return cpt_update_album_fail(true, $album_id, 'commit failed');
+	}
+
+	if ($old_status !== $fields['status'] || $permissions_changed) {
+		if (function_exists('trigger_notify')) { trigger_notify('CPT_after_privacy_change', $album_id); }
+		// Defer cache invalidation: callers flush once after the complete save
+		// (audit P4/S5 — one invalidation per request, not per album).
+		cpt_mark_user_cache_dirty();
+	}
+
+	return true;
+}
+
+/**
+ * Shared failure path for cpt_update_album(): roll back and log loudly.
+ */
+function cpt_update_album_fail(bool $in_transaction, int $album_id, string $reason): bool
+{
+	if ($in_transaction) {
+		cpt_db_rollback();
+	}
+	error_log('[core_privacy_toggle] privacy update aborted for album '.$album_id.': '.$reason.($in_transaction ? ' (rolled back)' : ' (no transaction support — manual check advised)'));
+	return false;
+}
+
+/**
+ * Transaction helpers. pwg_query() proxies the raw connection, so plain
+ * BEGIN/COMMIT/ROLLBACK statements are sufficient; on storage engines
+ * without transaction support these are silent no-ops and the verified,
+ * ordered sequence in cpt_update_album() is the fallback safety.
+ */
+function cpt_db_begin(): bool
+{
+	return (bool) pwg_query('BEGIN');
+}
+
+function cpt_db_commit(): bool
+{
+	return (bool) pwg_query('COMMIT');
+}
+
+function cpt_db_rollback(): void
+{
+	pwg_query('ROLLBACK');
 }
 
 /**

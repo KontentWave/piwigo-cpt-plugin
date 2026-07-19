@@ -165,6 +165,27 @@ function pwg_query($sql){
     $sqlTrim = trim($sql);
     $GLOBALS['__last_query'] = $sqlTrim;
     global $prefixeTable;
+    // Failure injection for transaction/rollback tests: any statement matching
+    // the regex in __cpt_test_fail_sql_pattern reports failure.
+    if (!empty($GLOBALS['__cpt_test_fail_sql_pattern']) && preg_match($GLOBALS['__cpt_test_fail_sql_pattern'], $sqlTrim)) {
+        return false;
+    }
+    // Transaction simulation with snapshot semantics
+    if (preg_match('/^(BEGIN|START TRANSACTION)$/i', $sqlTrim)) {
+        $GLOBALS['__cpt_db_txn_snapshot'] = $GLOBALS['__cpt_db'];
+        return true;
+    }
+    if (strcasecmp($sqlTrim, 'COMMIT') === 0) {
+        unset($GLOBALS['__cpt_db_txn_snapshot']);
+        return true;
+    }
+    if (strcasecmp($sqlTrim, 'ROLLBACK') === 0) {
+        if (isset($GLOBALS['__cpt_db_txn_snapshot'])) {
+            $GLOBALS['__cpt_db'] = $GLOBALS['__cpt_db_txn_snapshot'];
+            unset($GLOBALS['__cpt_db_txn_snapshot']);
+        }
+        return true;
+    }
     // SELECT COUNT(id) FROM categories WHERE <ownership_column> = X
     if (preg_match('/SELECT COUNT\(id\) AS cnt FROM '.CATEGORIES_TABLE.' WHERE ([a-z_]+) = (\d+)/',$sqlTrim,$m)){
         $column = $m[1]; $uid = (int)$m[2]; $cnt=0; foreach($GLOBALS['__cpt_db']['categories'] as $c){ if(($c[$column]??null)===$uid){$cnt++;}} return new ArrayIterator([[ 'cnt'=>$cnt ]]);
@@ -556,6 +577,7 @@ function cpt_test_reset_env(){
     if (array_key_exists('__cpt_test_owner_profile_plugin_available', $GLOBALS)) { unset($GLOBALS['__cpt_test_owner_profile_plugin_available']); }
     if (array_key_exists('__cpt_ownership_column_cache', $GLOBALS)) { unset($GLOBALS['__cpt_ownership_column_cache']); }
     unset($GLOBALS['__cpt_user_cache_purged'], $GLOBALS['__cpt_user_cache_dirty']);
+    unset($GLOBALS['__cpt_test_fail_sql_pattern'], $GLOBALS['__cpt_db_txn_snapshot']);
     $GLOBALS['__cpt_user_cache_invalidations'] = 0;
     $GLOBALS['__cpt_user_cache_invalidate_full_flags'] = [];
 }
