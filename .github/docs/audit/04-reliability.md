@@ -26,7 +26,10 @@ Consequences:
 - A failed ownership lookup returns `null`, which downstream reads as "denied" (safe
   direction ✔) — but a failed `INSERT INTO user_access` after a successful
   `status='private'` UPDATE is not detected at all (see R2).
-- Operators get zero signal; there is no logging anywhere in the plugin.
+- There is no **plugin-level** structured logging. Core's `pwg_query()` does raise a
+  PHP warning (`my_error()` → `trigger_error`) on query failure, but the plugin adds
+  no context of its own, cannot distinguish failure from a legitimate empty state,
+  and always continues silently.
 
 **Recommendation:** adopt the exception + logging model in
 [06-error-handling.md](06-error-handling.md). At minimum, wrap `pwg_query` in a helper that logs failures
@@ -81,9 +84,10 @@ _owner's own_ session. Other users are actually covered by the `user_cache` purg
 does not.
 
 **Recommendation:** remove the session flag (and its `init` consumer) once the
-targeted-invalidation strategy from P4 is adopted (per-user `need_update` rows, or
-`invalidate_user_cache(false)` — note core's default `$full = true` truncates rather
-than marks); that mechanism covers all sessions correctly.
+invalidation strategy from P4 is adopted (`invalidate_user_cache(false)` once after
+the complete save — note core's default `$full = true` truncates rather than marks;
+per-user `need_update` rows only for shared-list-only edits); that mechanism covers
+all sessions correctly.
 
 ### R5 — LOW — Concurrency: no locking on read-modify-write
 

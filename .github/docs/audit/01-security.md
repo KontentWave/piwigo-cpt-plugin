@@ -104,15 +104,17 @@ recomputation per user per request).
 
 **Recommendation:**
 
-- Use **targeted** invalidation: mark only affected users for rebuild
-  (`UPDATE user_cache SET need_update='true' WHERE user_id IN (owner, shared users,
-guest)`), or call core's `invalidate_user_cache(false)` (sets `need_update` for all
-  users without truncating). ⚠️ Do **not** simply call `invalidate_user_cache()` with
-  defaults: in Piwigo 15 `$full = true` **TRUNCATEs both** `user_cache` and
-  `user_cache_categories` — heavier than the plugin's current raw `DELETE`. Note also
-  that the function lives in `admin/include/functions.php`, which is not loaded on
-  front-end requests — the plugin must `include_once` it or issue the targeted SQL
-  itself.
+- Call core's `invalidate_user_cache(false)` **once per request after the complete
+  save** (sets `need_update` for all users without truncating). A public↔private
+  transition changes the cached visibility of **every** normal user, so per-user
+  targeting (owner/shared/guest) is insufficient there; reserve targeted
+  `UPDATE user_cache SET need_update='true' WHERE user_id IN (...)` for changes that
+  only edit the shared-user list of an already-private album. ⚠️ Do **not** call
+  `invalidate_user_cache()` with defaults: in Piwigo 15 `$full = true` **TRUNCATEs
+  both** `user_cache` and `user_cache_categories` — heavier than the plugin's current
+  raw `DELETE`. Note also that the function lives in `admin/include/functions.php`,
+  which is not loaded on front-end requests — the plugin must `include_once` it or
+  issue the equivalent SQL itself.
 - Do not just delete `cpt_purge_user_cache()` — without a replacement invalidation,
   other users keep stale visibility.
 - Consider a lightweight rate limit / cooldown on privacy toggles per user.
@@ -186,15 +188,15 @@ check comment referencing the core line.
 
 ## OWASP Top 10 (2021) mapping
 
-| Category                           | Status                                                                   |
-| ---------------------------------- | ------------------------------------------------------------------------ |
-| A01 Broken Access Control          | Good ownership gating; S4 (id-1 assumption), S8 (fallback heuristic)     |
-| A02 Cryptographic Failures         | N/A (no crypto handled by plugin)                                        |
-| A03 Injection                      | No exploitable path found; S6 defense-in-depth                           |
-| A04 Insecure Design                | S5 (global cache purge), S3 (user list exposure)                         |
-| A05 Security Misconfiguration      | S7 (debug flag); index.php stubs present ✔                               |
-| A06 Vulnerable Components          | Only dev dependency (PHPUnit ^11.5); keep updated                        |
-| A07 Identification & Auth Failures | Guest checks present ✔; S2 (token in URL)                                |
-| A08 Software & Data Integrity      | No update/deserialization risk; `safe_unserialize` used ✔                |
-| A09 Logging & Monitoring Failures  | **No logging at all** — see [06-error-handling.md](06-error-handling.md) |
-| A10 SSRF                           | N/A                                                                      |
+| Category                           | Status                                                                                                                      |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| A01 Broken Access Control          | Good ownership gating; S4 (id-1 assumption), S8 (fallback heuristic)                                                        |
+| A02 Cryptographic Failures         | N/A (no crypto handled by plugin)                                                                                           |
+| A03 Injection                      | No exploitable path found; S6 defense-in-depth                                                                              |
+| A04 Insecure Design                | S5 (global cache purge), S3 (user list exposure)                                                                            |
+| A05 Security Misconfiguration      | S7 (debug flag); index.php stubs present ✔                                                                                  |
+| A06 Vulnerable Components          | Only dev dependency (PHPUnit ^11.5); keep updated                                                                           |
+| A07 Identification & Auth Failures | Guest checks present ✔; S2 (token in URL)                                                                                   |
+| A08 Software & Data Integrity      | No update/deserialization risk; `safe_unserialize` used ✔                                                                   |
+| A09 Logging & Monitoring Failures  | **No plugin-level logging** (core `pwg_query()` emits SQL warnings only) — see [06-error-handling.md](06-error-handling.md) |
+| A10 SSRF                           | N/A                                                                                                                         |

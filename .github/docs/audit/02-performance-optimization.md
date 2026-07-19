@@ -77,29 +77,33 @@ SELECT id FROM categories WHERE uppercats LIKE '<escaped_uppercats>,%'
 **one** `UPDATE ... WHERE id IN (...)` instead of one `UPDATE ... LIMIT 1` per
 descendant ([functions.inc.php L1199-L1213](../../../include/functions.inc.php#L1199-L1213)).
 
-### P4 — HIGH — Gallery-wide cache wipe on every privacy change (twice)
+### P4 — HIGH — Gallery-wide cache wipe on every privacy change (one raw wipe, sometimes a second full truncation)
 
 [include/functions.inc.php L1300-L1310](../../../include/functions.inc.php#L1300-L1310)
 
 See [01-security.md](01-security.md) §S5 for the abuse angle. Purely as performance:
 after each toggle, _every_ user's next request pays the permission-recomputation cost.
-The damage is doubled: besides the raw `DELETE FROM user_cache`, the plugin also calls
-`invalidate_user_cache()` — and in Piwigo 15 that function's default (`$full = true`)
-**TRUNCATEs both `user_cache` and `user_cache_categories`** (it only sets
-`need_update` when called with `false`). `cpt_purge_user_cache()` additionally runs
-`SHOW TABLES LIKE` on every invocation.
+The raw `DELETE FROM user_cache` always runs. The `invalidate_user_cache()` call is
+guarded by `function_exists()`, and the function lives in
+`admin/include/functions.php`, so it is normally **undefined on front-end paths**
+(profile page, quick toggle). When an admin-context request has loaded it, though,
+the Piwigo 15 default (`$full = true`) **TRUNCATEs both `user_cache` and
+`user_cache_categories`** (it only sets `need_update` when called with `false`).
+Net effect: always one raw wipe, potentially a second full truncation.
+`cpt_purge_user_cache()` additionally runs `SHOW TABLES LIKE` on every invocation.
 
 Amplification: `cpt_handle_album_form()` unconditionally puts `status` into `$updates`
 for every album in the payload, and the JS save submits **all** albums — so one "Save
 Changes" click over N albums performs up to N full gallery-wide wipes.
 
-**Recommendation:** replace both mechanisms with **targeted** invalidation
-(`UPDATE user_cache SET need_update='true' WHERE user_id IN (...)` for owner + shared
-users + guest), or at minimum `invalidate_user_cache(false)` once per request
-(debounced after the album loop, not per album). Do not remove `cpt_purge_user_cache()`
-without a replacement — stale permissions would persist for other users. Remember
-`invalidate_user_cache()` is defined in `admin/include/functions.php` and needs an
-explicit include on front-end paths.
+**Recommendation:** replace both mechanisms with a single
+`invalidate_user_cache(false)` **after the complete save** (debounced after the album
+loop, not per album) — a public↔private change affects every user's cached
+visibility, so per-user targeting is only safe for shared-list-only edits on
+already-private albums. Do not remove `cpt_purge_user_cache()` without a replacement —
+stale permissions would persist for other users. Remember `invalidate_user_cache()`
+is defined in `admin/include/functions.php` and needs an explicit include on
+front-end paths.
 
 ### P5 — LOW — Repeated single-row lookups already answerable from prior results
 
