@@ -1,13 +1,9 @@
-name: Core Privacy Toggle PHPUnit
+name: PHPUnit
 
 on:
   push:
-    paths:
-      - "albums/plugins/core_privacy_toggle/**"
-      - "!albums/plugins/core_privacy_toggle/README.md"
+    branches: ["**"]
   pull_request:
-    paths:
-      - "albums/plugins/core_privacy_toggle/**"
 
 jobs:
   tests:
@@ -23,5 +19,5 @@ jobs:
           tools: composer
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
-      - name: Run plugin PHPUnit tests
-        run: vendor/bin/phpunit -c albums/plugins/core_privacy_toggle/phpunit.xml.dist --testdox
+      - name: Run PHPUnit tests
+        run: vendor/bin/phpunit -c phpunit.xml.dist --testdox

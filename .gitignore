@@ -1,8 +1,5 @@
 /vendor/
-/tests/
 /tools/
 /.specstory/
 .phpunit.result.cache
 core_privacy_toggle.code-workspace
-phpunit.xml.dist
-/.specstory/
