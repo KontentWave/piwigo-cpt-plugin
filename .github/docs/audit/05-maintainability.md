@@ -32,7 +32,13 @@ review scope per change dramatically.
 
 ### M3 — MEDIUM — CI present but non-functional
 
-Workflows exist ([phpunit.yml](../../workflows/phpunit.yml), [cypress.yml](../../workflows/cypress.yml)) but cannot succeed as configured:
+> **✅ FIXED** in `589bc05` + `4116921` (2026-07-19): `tests/` and `phpunit.xml.dist`
+> are now tracked; `phpunit.yml` was rewritten for the standalone repo layout and
+> checks out into `plugins/core_privacy_toggle` (main.inc.php's folder-name guard);
+> the stale Cypress workflow was removed. First green run: PHPUnit on `4116921`.
+> Still open from the recommendation: phpstan + cs-check steps.
+
+Workflows exist ([phpunit.yml](../../workflows/phpunit.yml), cypress.yml — since removed) but cannot succeed as configured:
 
 - Both trigger on and reference monorepo paths (`albums/plugins/core_privacy_toggle/**`)
   that do not exist in this repository — the repo root **is** the plugin, so the path
@@ -117,6 +123,10 @@ means the unused keys multiply translator effort eightfold.
   injectable resolver (X1).
 
 ### M9 — INFO — Repository artifacts
+
+> **✅ PARTLY FIXED** in `589bc05` (2026-07-19): `tests/` and `phpunit.xml.dist` are
+> now tracked and run in CI. The `tools/` HTML snapshot and release-checklist items
+> below remain open.
 
 - `vendor/`, `tools/`, `tests/`, and `phpunit.xml.dist` are **gitignored** (present
   only in the working tree). Good for vendor/tools; **wrong for the test suite** —

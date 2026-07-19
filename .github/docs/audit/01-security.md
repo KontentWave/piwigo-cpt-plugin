@@ -94,6 +94,14 @@ reason). Consequences when the assumption breaks:
 
 ### S5 — HIGH — Global `user_cache` purge is a user-triggerable DoS vector
 
+> **✅ FIXED** in `10b6dbd` (2026-07-19): the raw `DELETE` was replaced by a single
+> per-request `need_update='true'` invalidation (`invalidate_user_cache(false)` in
+> admin context), deferred via dirty flag and flushed once after the complete save.
+> Save-all amplification is gone (one invalidation per submit, N× before), and
+> no-op re-saves no longer touch the cache. Residual risk: a user can still force
+> one lazy gallery-wide recomputation per request by genuinely toggling privacy —
+> the rate-limit recommendation below remains open (tracked with S9).
+
 [include/functions.inc.php L1300-L1310](../../../include/functions.inc.php#L1300-L1310) (`cpt_purge_user_cache`)
 
 `DELETE FROM <prefix>user_cache` wipes the per-user permission cache for **all** users

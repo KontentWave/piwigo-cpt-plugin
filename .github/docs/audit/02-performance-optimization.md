@@ -11,6 +11,11 @@ or thousands of users. One pattern (P1) runs on **every request**.
 
 ### P1 — HIGH — Full-catalog reconciliation runs on every page load for every user (guests included)
 
+> **✅ FIXED** in `10b6dbd` (2026-07-19): the `init`-hook call was removed; propagation
+> is enforced event-driven at save time. `cpt_reconcile_private_owner_root_descendants_for_user()`
+> remains available for explicit event-driven healing and now flushes its own cache
+> invalidation. Regression-covered by the existing reconciliation test.
+
 [main.inc.php L96-L98](../../../main.inc.php#L96-L98) → `cpt_reconcile_private_owner_root_descendants_for_user()`
 ([include/functions.inc.php L1135-L1166](../../../include/functions.inc.php#L1135-L1166))
 
@@ -78,6 +83,16 @@ SELECT id FROM categories WHERE uppercats LIKE '<escaped_uppercats>,%'
 descendant ([functions.inc.php L1199-L1213](../../../include/functions.inc.php#L1199-L1213)).
 
 ### P4 — HIGH — Gallery-wide cache wipe on every privacy change (one raw wipe, sometimes a second full truncation)
+
+> **✅ FIXED** in `10b6dbd` (2026-07-19): `cpt_purge_user_cache()` (raw `DELETE` +
+> `SHOW TABLES`) was replaced by `cpt_invalidate_user_cache()` —
+> `invalidate_user_cache(false)` when core's function is loaded (admin context),
+> otherwise the equivalent `UPDATE user_cache SET need_update='true'` on front-end
+> paths. Invalidation is deferred via a dirty flag and flushed **once per request**
+> after the complete save, and `cpt_sync_album_visibility_permissions()` now reports
+> change status so idempotent re-saves and non-privacy edits skip invalidation
+> entirely. Covered by two new tests (single invalidation per multi-album save; no
+> invalidation on non-privacy edits).
 
 [include/functions.inc.php L1300-L1310](../../../include/functions.inc.php#L1300-L1310)
 

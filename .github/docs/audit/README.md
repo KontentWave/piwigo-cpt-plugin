@@ -23,22 +23,23 @@ The plugin is functionally solid and shows good security instincts at the bounda
 (ownership re-checks before every write, CSRF tokens on both webservice endpoints and the
 album-page quick toggle, consistent output escaping in templates and JS, integer casting
 of IDs, whitelisted status/visibility values). Unit-test coverage of the core ownership
-and update logic is unusually good for a Piwigo plugin — but the suite exists only in
-the working tree: the repository tracks no tests or PHPUnit configuration (see M9/M3),
-so none of it is verifiable from the repo or CI.
+and update logic is unusually good for a Piwigo plugin — since `589bc05` the suite is
+tracked in the repository and runs green in CI (M9/M3 fixed).
 
-The dominant production risks are **not** classic injection/XSS holes — they are:
+The dominant production risks identified were **not** classic injection/XSS holes — they were:
 
 1. **A per-request reconciliation job in the `init` hook** that scans the whole
    `categories` table with N+1 follow-up queries on _every page load for every
    user — anonymous guests included_, since Piwigo assigns guests a real user id
    (performance, scalability, availability). See
    [02-performance-optimization.md](02-performance-optimization.md) §P1.
+   **✅ Fixed in `10b6dbd`.**
 2. **Gallery-wide cache wipe on every privacy change** — the raw `user_cache`
    `DELETE` always fires; a `function_exists()`-guarded `invalidate_user_cache()`
    call (TRUNCATE by default in Piwigo 15, normally undefined on front-end paths)
    can add a second, heavier wipe. Amplified up to N× by save-all submissions. See
    [01-security.md](01-security.md) §S5 and [02-performance-optimization.md](02-performance-optimization.md) §P4.
+   **✅ Fixed in `10b6dbd`** (single deferred `need_update` invalidation per save).
 3. **Silent-failure error model** — every DB failure returns `null`/`false`/`[]`
    with no plugin-level logging (core `pwg_query()` only emits a generic SQL
    warning), and multi-statement privacy transitions are not transactional,
@@ -49,23 +50,22 @@ The dominant production risks are **not** classic injection/XSS holes — they a
 
 ## Findings at a glance
 
-| Severity | Count | Highlights                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Critical | 0     | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| High     | 3     | Per-request full scan in `init` (P1); global `user_cache` purge as DoS vector (S5/P4); non-transactional privacy propagation (R2)                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| Medium   | 16    | pwg_token in GET URL (S2); user enumeration via shareable-user list (S3); hardcoded webmaster id 1 (S4); no column whitelist in `cpt_update_album` (S6); N+1 queries on profile page (P2); full-table descendant scan (P3); double script injection (P6); monolithic core with no seams (X1); empty `maintain.class.php` (X2); silent DB failures (R1); surprising propagation edges (R3); misleading session-flag mechanism (R4); monolithic 1,317-line functions file (M1); CI present but non-functional (M3); documentation drift (M4); 570-line regex SQL test double (M6) |
-| Low      | 14+   | See individual documents                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Info     | 10+   | Legacy inventory, dead code, doc drift                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Severity | Count | Highlights                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Critical | 0     | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| High     | 3     | Per-request full scan in `init` (P1, **✅ fixed**); global `user_cache` purge as DoS vector (S5/P4, **✅ fixed**); non-transactional privacy propagation (R2, open)                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Medium   | 16    | pwg_token in GET URL (S2); user enumeration via shareable-user list (S3); hardcoded webmaster id 1 (S4); no column whitelist in `cpt_update_album` (S6); N+1 queries on profile page (P2); full-table descendant scan (P3); double script injection (P6); monolithic core with no seams (X1); empty `maintain.class.php` (X2); silent DB failures (R1); surprising propagation edges (R3); misleading session-flag mechanism (R4, **✅ fixed**); monolithic 1,317-line functions file (M1); CI present but non-functional (M3, **✅ fixed**); documentation drift (M4); 570-line regex SQL test double (M6) |
+| Low      | 14+   | See individual documents                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Info     | 10+   | Legacy inventory, dead code, doc drift                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 ## Top 10 prioritized recommendations
 
-1. **Remove or gate the `init`-hook reconciliation** (`cpt_reconcile_private_owner_root_descendants_for_user`) behind an event-driven trigger or a cheap sentinel check — do not run it on every request. (High, P1)
-2. **Replace the gallery-wide cache wipe with `invalidate_user_cache(false)` once
-   after the complete save** — public↔private changes affect every user's cached
-   visibility, so per-user targeting is only safe for shared-list-only edits.
-   ⚠️ Core's `invalidate_user_cache()` default TRUNCATEs; do not delete
-   `cpt_purge_user_cache()` without a replacement. (High, S5/P4)
-3. **Wrap privacy transitions (status + descendants + `user_access` sync) in a transaction** or at least an ordered, verified sequence with rollback-on-failure. (High, R2)
+1. ~~**Remove or gate the `init`-hook reconciliation**~~ **✅ Done** (`10b6dbd`) — the `init` call was removed; propagation is event-driven at save time. (High, P1)
+2. ~~**Replace the gallery-wide cache wipe with `invalidate_user_cache(false)` once
+   after the complete save**~~ **✅ Done** (`10b6dbd`) — single deferred invalidation per
+   save; `need_update='true'` UPDATE on front-end paths where core's function is
+   undefined; idempotent re-saves skip invalidation. (High, S5/P4)
+3. **Wrap privacy transitions (status + descendants + `user_access` sync) in a transaction** or at least an ordered, verified sequence with rollback-on-failure. (High, R2) — **next up**
 4. **Move `pwg_token` out of the GET query string** in `js/ucp_tabs.js` (`loadRepresentativeOptions`) — use POST. (Medium, S2)
 5. **Introduce the custom exception hierarchy + boundary handlers** defined in [06-error-handling.md](06-error-handling.md); log every swallowed DB failure. (Medium)
 6. **Whitelist updatable columns inside `cpt_update_album()`** (`name`, `comment`, `status`) as defense-in-depth. (Medium, S6)
@@ -78,11 +78,22 @@ The dominant production risks are **not** classic injection/XSS holes — they a
 
 Manual line-by-line review of all PHP/JS/TPL/CSS files, cross-referenced against Piwigo
 core behavior (`profile.php` token handling, `ws.php` slashes handling, `user_cache`
-semantics) and the plugin's own test suite (working tree only — the repo tracks no
-tests). No dynamic scanning was performed.
+semantics) and the plugin's own test suite (untracked at audit time; tracked and
+running in CI since `589bc05`). No dynamic scanning was performed.
 
 ## Revision history
 
+- **2026-07-19 (remediation, round 1)** — fixes landed and verified by CI:
+  - `589bc05` + `4116921`: **M3/M9 fixed** — `tests/` and `phpunit.xml.dist` tracked,
+    `phpunit.yml` rewritten for the standalone repo (checkout into
+    `plugins/core_privacy_toggle` to satisfy main.inc.php's folder-name guard),
+    stale `cypress.yml` removed. First green PHPUnit status on `4116921`.
+  - `10b6dbd`: **P1, P4/S5, R4 fixed** — `init`-hook reconciler and
+    `cpt_permissions_changed` session flag removed; raw `user_cache` DELETE replaced
+    by one deferred `need_update='true'` invalidation per save request
+    (`invalidate_user_cache(false)` in admin context); sync function reports change
+    status so no-op saves skip invalidation. 29 tests / 96 assertions green.
+  - Remaining release blocker: **R2** (transactional, verified privacy updates).
 - **2026-07-19 (rev 3)** — corrections after second external review (ChatGPT "Sol"):
   - Cache-invalidation advice fixed: per-user targeting (owner/shared/guest) is
     **insufficient for public↔private changes** — every normal user may hold cached

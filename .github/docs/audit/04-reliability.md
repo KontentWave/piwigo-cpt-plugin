@@ -75,6 +75,10 @@ toggle + reconciler, and add tests for the shared-root case.
 
 ### R4 — MEDIUM — `$_SESSION['cpt_permissions_changed']` cannot notify "other sessions"
 
+> **✅ FIXED** in `10b6dbd` (2026-07-19): the session flag and its `init` consumer
+> were removed together with the P4 fix; the per-request `need_update` invalidation
+> covers all sessions correctly.
+
 [main.inc.php L91-L95](../../../main.inc.php#L91-L95), [functions.inc.php L1220](../../../include/functions.inc.php#L1220)
 
 The comments say the flag is a "one-shot flag for **other sessions** to re-evaluate
