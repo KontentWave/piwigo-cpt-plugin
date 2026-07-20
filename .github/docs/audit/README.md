@@ -42,23 +42,23 @@ The dominant production risks identified were **not** classic injection/XSS hole
    **✅ Fixed in `10b6dbd`** (single deferred `need_update` invalidation per save).
 3. **Silent-failure error model** — every DB failure returns `null`/`false`/`[]`
    with no plugin-level logging (core `pwg_query()` only emits a generic SQL
-   warning), and multi-statement privacy transitions are not transactional,
-   so partial failures leave albums in inconsistent permission states. See
-   [04-reliability.md](04-reliability.md) and [06-error-handling.md](06-error-handling.md).
-   **✅ Transactional part fixed in `9ffc60a`** (R2); the broader logging /
-   exception model (R1, E-series) remains open.
-4. **CSRF token sent as a GET query parameter** by the representative-image AJAX
-   loader (token leakage via logs/referrer). See [01-security.md](01-security.md) §S2.
+   warning). The major consistency hole in multi-statement privacy transitions is
+   now fixed with a MyISAM-safe snapshot/restore sequence, but the broader logging /
+   exception model still remains open. See [04-reliability.md](04-reliability.md)
+   and [06-error-handling.md](06-error-handling.md).
+4. **Representative-image loader leaked `pwg_token` in a GET query string**
+   (logs/history/referrer exposure). See [01-security.md](01-security.md) §S2.
+   **✅ Fixed in `21e4aa4`.**
 
 ## Findings at a glance
 
-| Severity | Count | Highlights                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Critical | 0     | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| High     | 3     | Per-request full scan in `init` (P1, **✅ fixed**); global `user_cache` purge as DoS vector (S5/P4, **✅ fixed**); non-transactional privacy propagation (R2, **✅ fixed**)                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Medium   | 16    | pwg_token in GET URL (S2); user enumeration via shareable-user list (S3); hardcoded webmaster id 1 (S4); no column whitelist in `cpt_update_album` (S6); N+1 queries on profile page (P2); full-table descendant scan (P3); double script injection (P6); monolithic core with no seams (X1); empty `maintain.class.php` (X2); silent DB failures (R1); surprising propagation edges (R3); misleading session-flag mechanism (R4, **✅ fixed**); monolithic 1,317-line functions file (M1); CI present but non-functional (M3, **✅ fixed**); documentation drift (M4); 570-line regex SQL test double (M6) |
-| Low      | 14+   | See individual documents                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| Info     | 10+   | Legacy inventory, dead code, doc drift                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Severity | Count | Highlights                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Critical | 0     | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| High     | 3     | Per-request full scan in `init` (P1, **✅ fixed**); global `user_cache` purge as DoS vector (S5/P4, **✅ fixed**); non-transactional privacy propagation (R2, **✅ fixed**)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Medium   | 16    | pwg_token in GET URL (S2, **✅ fixed**); user enumeration via shareable-user list (S3); hardcoded webmaster id 1 (S4, **✅ fixed**); no column whitelist in `cpt_update_album` (S6, **✅ fixed**); N+1 queries on profile page (P2); full-table descendant scan (P3); double script injection (P6); monolithic core with no seams (X1); empty `maintain.class.php` (X2); silent DB failures (R1); surprising propagation edges (R3, **✅ fixed**); misleading session-flag mechanism (R4, **✅ fixed**); monolithic 1,317-line functions file (M1); CI present but non-functional (M3, **✅ fixed**); documentation drift (M4); 570-line regex SQL test double (M6) |
+| Low      | 14+   | See individual documents                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Info     | 10+   | Legacy inventory, dead code, doc drift                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
 ## Top 10 prioritized recommendations
 
@@ -67,12 +67,12 @@ The dominant production risks identified were **not** classic injection/XSS hole
    after the complete save**~~ **✅ Done** (`10b6dbd`) — single deferred invalidation per
    save; `need_update='true'` UPDATE on front-end paths where core's function is
    undefined; idempotent re-saves skip invalidation. (High, S5/P4)
-3. ~~**Wrap privacy transitions (status + descendants + `user_access` sync) in a transaction**~~ **✅ Done** (`9ffc60a`) — single transaction with per-step verification and rollback-on-failure; `cpt_update_album()` returns bool and callers surface errors. (High, R2)
-4. **Move `pwg_token` out of the GET query string** in `js/ucp_tabs.js` (`loadRepresentativeOptions`) — use POST. (Medium, S2)
+3. ~~**Wrap privacy transitions (status + descendants + `user_access` sync) in a transaction**~~ **✅ Superseded** — Piwigo 15 stores `categories` and `user_access` as MyISAM, so transaction statements do not protect these writes. **✅ Done correctly in `139e844`** with snapshot/verify/restore semantics, restore verification, and critical logging on restore failure. (High, R2)
+4. ~~**Move `pwg_token` out of the GET query string** in `js/ucp_tabs.js` (`loadRepresentativeOptions`) — use POST.~~ **✅ Done** (`21e4aa4`). (Medium, S2)
 5. **Introduce the custom exception hierarchy + boundary handlers** defined in [06-error-handling.md](06-error-handling.md); log every swallowed DB failure. (Medium)
-6. **Whitelist updatable columns inside `cpt_update_album()`** (`name`, `comment`, `status`) as defense-in-depth. (Medium, S6)
+6. ~~**Whitelist updatable columns inside `cpt_update_album()`** (`name`, `comment`, `status`) as defense-in-depth.~~ **✅ Done** (`139e844`). (Medium, S6)
 7. **Batch queries in `cpt_fetch_albums_owned_by()`** — one query for categories, one for owners, one for `user_access`, one for representatives. (Medium, P2)
-8. **Replace hardcoded user id `1`** with `$conf['webmaster_id']` / admin-status logic. (Medium, S4)
+8. ~~**Replace hardcoded user id `1`** with `$conf['webmaster_id']` / admin-status logic.~~ **✅ Done** (`139e844`). (Medium, S4)
 9. **Fill in `maintain.class.php`** — create config defaults on install, clean up config and session flags on uninstall. (Medium, X2)
 10. **Delete dead code and leftover artifacts** (dead functions, owner-profile test stubs, ~70 unused language keys, `tools/` HTML snapshot). (Low, L-series)
 
@@ -85,11 +85,26 @@ running in CI since `589bc05`). No dynamic scanning was performed.
 
 ## Revision history
 
+- **2026-07-20 (remediation, round 3)** — `139e844` + `21e4aa4`: **R2, R3, S2, S4, S6 fixed**.
+  - `139e844`: replaced the incorrect transaction-based R2 remediation with a
+    MyISAM-safe snapshot/verify/restore sequence for root status, descendant statuses,
+    and `user_access` rows; failures now restore and verify the pre-write snapshot,
+    escalate restore failures to critical logs, invalidate caches on restore failure,
+    and surface safe user-facing failures. The same commit also replaced hardcoded
+    webmaster id `1` with `$conf['webmaster_id']`, joined `user_infos.status` for
+    shareable-user admin filtering, enforced the `name`/`comment`/`status` whitelist
+    inside `cpt_update_album()`, and fixed shared/public descendant propagation.
+  - `21e4aa4`: moved representative-image loading from GET to POST so `pwg_token`
+    never appears in the request URL.
+  - Verification: local PHPUnit green at **41 tests / 152 assertions**, GitHub
+    Actions green on `21e4aa4`, and live smoke on Piwigo 15 + Community +
+    MariaDB/MyISAM covered public/private/shared transitions, descendant propagation,
+    two-user cache visibility, custom webmaster id, non-owner denial, and POST-only
+    representative-image requests.
 - **2026-07-19 (remediation, round 2)** — `9ffc60a`: **R2 fixed** — privacy
-  transitions (status + descendant propagation + `user_access` sync) now run in a
-  single verified transaction with rollback-on-failure; failures produce a
-  translatable error instead of a false success message. 31 tests / 105 assertions
-  green in CI. **All three High findings (P1, S5/P4, R2) are now resolved.**
+  transitions were documented as transaction-safe, but that claim proved incorrect on
+  Piwigo 15 because `categories` and `user_access` are MyISAM. Superseded by the
+  2026-07-20 remediation above.
 - **2026-07-19 (remediation, round 1)** — fixes landed and verified by CI:
   - `589bc05` + `4116921`: **M3/M9 fixed** — `tests/` and `phpunit.xml.dist` tracked,
     `phpunit.yml` rewritten for the standalone repo (checkout into

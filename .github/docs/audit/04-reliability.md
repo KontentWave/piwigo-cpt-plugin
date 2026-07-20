@@ -2,9 +2,9 @@
 
 **Scope:** failure modes, consistency, concurrency, graceful degradation, observability.
 **Verdict:** the plugin degrades gracefully on the _read_ side (missing columns, absent
-template features, theme quirks) but the _write_ side has consistency gaps: multi-step
-privacy transitions are not atomic, failures are invisible, and one cache-consistency
-mechanism does not do what its comments claim.
+template features, theme quirks). The largest write-side consistency gap on Piwigo 15
+is now fixed with a MyISAM-safe snapshot/restore flow, but observability and some
+performance-related risks still remain.
 
 ---
 
@@ -37,15 +37,16 @@ with query context before returning the sentinel.
 
 ### R2 — HIGH — Privacy transitions are not atomic
 
-> **✅ FIXED** in `9ffc60a` (2026-07-19): steps 1–4 now run inside a single
-> transaction (`pwg_query('BEGIN')` / `COMMIT` / `ROLLBACK`); every write is
-> verified and any failed step rolls back the whole transition, so a private
-> album can no longer end up without `user_access` rows and a private root can
-> no longer keep public descendants. On failure no cache invalidation and no
-> success message occur — callers surface a translatable error instead
-> (`cpt_update_album()` now returns bool). Covered by two new rollback tests.
+> **✅ FIXED** in `139e844` (2026-07-20): the earlier transaction-based remediation
+> was reopened after verifying that Piwigo 15 creates `categories` and
+> `user_access` as MyISAM. `cpt_update_album()` now captures a pre-write snapshot of
+> the root row, descendant statuses, and affected `user_access` rows, verifies every
+> status and permission write, and restores + re-verifies the snapshot on any
+> failure. If restoration itself fails, the plugin logs a critical error, shows a
+> safe failure result to the caller, and invalidates affected caches. PHPUnit now
+> injects non-transactional write failures instead of simulating `ROLLBACK`.
 
-`cpt_update_album()` ([functions.inc.php L1170-L1246](../../../include/functions.inc.php#L1170-L1246)) performs, in order, with **no
+At audit time, `cpt_update_album()` ([functions.inc.php L1170-L1246](../../../include/functions.inc.php#L1170-L1246)) performed, in order, with **no
 transaction and no per-step verification**:
 
 1. `UPDATE categories SET status=…` (parent)
@@ -54,28 +55,33 @@ transaction and no per-step verification**:
 4. `INSERT INTO user_access …` per affected album
 5. cache invalidation + purge
 
-Failure between 3 and 4 leaves a **private album with no `user_access` rows** — the
-owner locks _themselves_ out (admins still see it). Failure between 1 and 2 leaves a
-private root with public descendants — which the `init`-hook reconciler was presumably
-added to heal (see P1); i.e., a per-request full-table scan exists to compensate for a
-missing transaction.
+Failure between 3 and 4 left a **private album with no `user_access` rows** — the
+owner locked _themselves_ out (admins still saw it). Failure between 1 and 2 left a
+private root with public descendants — which the `init`-hook reconciler was
+presumably added to heal (see P1); i.e., a per-request full-table scan existed to
+compensate for a missing transaction.
 
-**Recommendation:** wrap steps 1–4 in a transaction. Piwigo core exposes the raw
-connection; a simple `pwg_query('BEGIN')` / `COMMIT` / `ROLLBACK` (guarded by driver
-capability) is enough. Then delete the reconciler from `init` (P1). Also check the
-result of the `INSERT` in step 4 and restore/fail loudly on error.
+**Recommendation:** keep the snapshot surface narrow and preserve the current
+verification discipline if more write steps are added to privacy changes.
 
 ### R3 — MEDIUM — Descendant propagation semantics have surprising edges
 
-- Propagation only happens when the toggled album is the **effective owner root** and
-  mode is strictly `private` (`cpt_should_propagate_private_status_to_descendants`).
-  Toggling that same root to `shared` (private + user list) does **not** touch
-  descendants, leaving mixed visibility that the reconciler will later flip to fully
-  private (because it forces `['mode' => 'private', 'shared_user_ids' => []]`,
+> **✅ FIXED** in `139e844` (2026-07-20): shared/private/public updates now propagate
+> the same permission intent through owned-root descendants, reconciliation no longer
+> strips shared users from descendants, and regression tests plus live smoke cover the
+> shared-root and public-restore cases.
+
+At audit time:
+
+- Propagation only happened when the toggled album was the **effective owner root** and
+  mode was strictly `private` (`cpt_should_propagate_private_status_to_descendants`).
+  Toggling that same root to `shared` (private + user list) did **not** touch
+  descendants, leaving mixed visibility that the reconciler later flipped to fully
+  private (because it forced `['mode' => 'private', 'shared_user_ids' => []]`,
   [functions.inc.php L1157](../../../include/functions.inc.php#L1157)) — silently **removing shares the owner configured**.
-- Descendants are propagated with `mode=private` regardless of the parent's shared
-  list ([functions.inc.php L1227-L1231](../../../include/functions.inc.php#L1227-L1231)), so "share root with Alice" gives Alice the
-  root but not its sub-albums; the UI does not communicate this.
+- Descendants were propagated with `mode=private` regardless of the parent's shared
+  list ([functions.inc.php L1227-L1231](../../../include/functions.inc.php#L1227-L1231)), so "share root with Alice" gave Alice the
+  root but not its sub-albums; the UI did not communicate this.
 
 **Recommendation:** decide and document one policy (most intuitive: propagate the
 _same_ permission set to descendants of an owned root), implement it symmetrically in

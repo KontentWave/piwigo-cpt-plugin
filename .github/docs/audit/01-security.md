@@ -50,7 +50,12 @@ that aborts with an error) inside `cpt_setup_ucp_tabs()` before calling
 
 ### S2 — MEDIUM — `pwg_token` transmitted in GET query string
 
-[js/ucp_tabs.js L268-L283](../../../js/ucp_tabs.js#L268-L283) (`loadRepresentativeOptions`)
+> **✅ FIXED** in `21e4aa4` (2026-07-20): `loadRepresentativeOptions()` now sends a
+> POST to `ws.php` with `URLSearchParams` in the body. Live smoke on Piwigo 15
+> confirmed a `200` XML response from the representative-image endpoint and no
+> `pwg_token` in the request URL.
+
+[js/ucp_tabs.js L268-L283](../../../js/ucp_tabs.js#L268-L283) (`loadRepresentativeOptions`, historical pre-fix shape)
 
 ```js
 params.set("pwg_token", token);
@@ -61,8 +66,8 @@ The CSRF token ends up in server access logs, proxy logs, and browser history.
 `pwg_token` is derived from the session and valid for the whole session — leakage
 meaningfully weakens CSRF protection for the WS write endpoint.
 
-**Recommendation:** send the request as POST with the token in the body (the save path
-`submitWsRequest` already does this correctly), or at minimum move the token to a header.
+**Recommendation:** keep representative-image requests on POST and keep the token in the
+request body, matching the already-correct save path.
 
 ### S3 — MEDIUM — Full user enumeration exposed to any album owner
 
@@ -78,6 +83,12 @@ only, or an admin-defined group), and/or convert the multi-select into a
 server-side-validated autocomplete that never ships the full list.
 
 ### S4 — MEDIUM — Hardcoded webmaster/admin user id `1`
+
+> **✅ FIXED** in `139e844` (2026-07-20): explicit private-album access rows now use
+> `$conf['webmaster_id']` via `cpt_get_webmaster_user_id()`, shared-user option
+> queries join `user_infos.status` to exclude admin/webmaster accounts correctly, and
+> regression tests prove a non-`1` webmaster receives access while an ordinary user id
+> `1` does not.
 
 [include/functions.inc.php L1085](../../../include/functions.inc.php#L1085) (`$allowed_user_ids = [1];`),
 [L569](../../../include/functions.inc.php#L569) (`NOT IN (1,...)`), [L594](../../../include/functions.inc.php#L594) (`$user_id === 1` skip in shared-list read).
@@ -131,6 +142,11 @@ recomputation per user per request).
   purges (see [02-performance-optimization.md](02-performance-optimization.md) §P4).
 
 ### S6 — MEDIUM — `cpt_update_album()` interpolates column names from array keys
+
+> **✅ FIXED** in `139e844` (2026-07-20): `cpt_update_album()` now enforces an
+> internal `name`/`comment`/`status` whitelist before building SQL and logs/rejects
+> unknown columns without issuing a write. Regression coverage lives in
+> `tests/AlbumUpdateSecurityTest.php`.
 
 [include/functions.inc.php L1189-L1194](../../../include/functions.inc.php#L1189-L1194)
 
