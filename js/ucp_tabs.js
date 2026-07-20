@@ -274,8 +274,12 @@
     params.set("album_id", albumId);
     params.set("pwg_token", token);
 
-    fetch("ws.php?" + params.toString(), {
-      method: "GET",
+    fetch("ws.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      },
+      body: params.toString(),
       credentials: "same-origin",
     })
       .then(function (response) {

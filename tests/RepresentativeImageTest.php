@@ -70,4 +70,15 @@ class RepresentativeImageTest extends TestCase
 		$category = cpt_test_get_category($albumId);
 		$this->assertSame('NULL', $category['representative_picture_id']);
 	}
+
+	public function testRepresentativePickerUsesPostWithoutTokenInUrl()
+	{
+		$script = file_get_contents(dirname(__DIR__).'/js/ucp_tabs.js');
+
+		$this->assertIsString($script);
+		$this->assertStringContainsString('params.set("pwg_token", token);', $script);
+		$this->assertStringContainsString('fetch("ws.php", {', $script);
+		$this->assertStringContainsString('method: "POST"', $script);
+		$this->assertStringNotContainsString('fetch("ws.php?" + params.toString()', $script);
+	}
 }
