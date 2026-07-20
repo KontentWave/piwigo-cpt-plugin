@@ -126,6 +126,29 @@ class PrivacyToggleTest extends TestCase
         }
     }
 
+    public function testInitStyleReconciliationPreservesSharedUsersOnDescendants()
+    {
+        $GLOBALS['__cpt_force_ownership_column'] = 'community_user';
+        cpt_test_set_user(17);
+        cpt_test_create_user(25, 'shared-user');
+
+        $root = cpt_test_create_community_owned_album(17, 'private', 'Root', '');
+        $child = cpt_test_create_child_album($root, 'public', 'Child', '');
+        $GLOBALS['__cpt_db']['user_access'][] = ['user_id' => 1, 'cat_id' => $root];
+        $GLOBALS['__cpt_db']['user_access'][] = ['user_id' => 17, 'cat_id' => $root];
+        $GLOBALS['__cpt_db']['user_access'][] = ['user_id' => 25, 'cat_id' => $root];
+
+        $this->assertTrue(cpt_reconcile_private_owner_root_descendants_for_user(17));
+        $this->assertSame('private', cpt_test_get_category($root)['status']);
+        $this->assertSame('private', cpt_test_get_category($child)['status']);
+
+        foreach ([$root, $child] as $albumId) {
+            $userIds = array_map(fn($row) => $row['user_id'], cpt_test_get_user_access($albumId));
+            sort($userIds);
+            $this->assertSame([1, 17, 25], $userIds);
+        }
+    }
+
     public function testMultiAlbumSaveInvalidatesUserCacheExactlyOnce()
     {
         cpt_test_set_user(18);
@@ -195,5 +218,92 @@ class PrivacyToggleTest extends TestCase
         $this->assertSame('public', cpt_test_get_category($child)['status']);
         $this->assertSame([], cpt_test_get_user_access($root));
         $this->assertSame([], cpt_test_get_user_access($child));
+    }
+
+    public function testFailedPublicPermissionDeleteRestoresOriginalState()
+    {
+        cpt_test_set_user(22);
+        $albumId = cpt_test_create_owned_album(22, 'private', 'Private', 'State');
+        $GLOBALS['__cpt_db']['user_access'][] = ['user_id' => 1, 'cat_id' => $albumId];
+        $GLOBALS['__cpt_db']['user_access'][] = ['user_id' => 22, 'cat_id' => $albumId];
+
+        $GLOBALS['__cpt_test_fail_sql_pattern'] = '/^DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int) $albumId.'$/';
+        $ok = cpt_update_album($albumId, ['status' => 'public'], false, ['mode' => 'public', 'shared_user_ids' => []], 22);
+        unset($GLOBALS['__cpt_test_fail_sql_pattern']);
+
+        $this->assertFalse($ok);
+        $this->assertSame('private', cpt_test_get_category($albumId)['status']);
+        $userIds = array_map(fn($row) => $row['user_id'], cpt_test_get_user_access($albumId));
+        sort($userIds);
+        $this->assertSame([1, 22], $userIds);
+    }
+
+    public function testFailedDescendantPermissionInsertRestoresEntireTree()
+    {
+        $GLOBALS['__cpt_force_ownership_column'] = 'community_user';
+        cpt_test_set_user(23);
+
+        $root = cpt_test_create_community_owned_album(23, 'public', 'Root', '');
+        $child = cpt_test_create_child_album($root, 'public', 'Child', '');
+
+        $GLOBALS['__cpt_test_fail_sql_pattern'] = sprintf(
+            '/^INSERT INTO %s \(user_id, cat_id\) VALUES .*\(%d,%d\),\(%d,%d\)$/',
+            USER_ACCESS_TABLE,
+            1,
+            $child,
+            23,
+            $child
+        );
+        $ok = cpt_update_album($root, ['status' => 'private'], false, [], 23);
+        unset($GLOBALS['__cpt_test_fail_sql_pattern']);
+
+        $this->assertFalse($ok);
+        $this->assertSame('public', cpt_test_get_category($root)['status']);
+        $this->assertSame('public', cpt_test_get_category($child)['status']);
+        $this->assertSame([], cpt_test_get_user_access($root));
+        $this->assertSame([], cpt_test_get_user_access($child));
+    }
+
+    public function testPublicRootRestoresDescendantStatusesAfterSharedTransition()
+    {
+        $GLOBALS['__cpt_force_ownership_column'] = 'community_user';
+        cpt_test_set_user(24);
+        cpt_test_create_user(26, 'shared-user');
+
+        $root = cpt_test_create_community_owned_album(24, 'public', 'Root', '');
+        $child = cpt_test_create_child_album($root, 'public', 'Child', '');
+
+        $this->assertTrue(cpt_update_album($root, ['status' => 'private'], false, ['mode' => 'shared', 'shared_user_ids' => [26]], 24));
+        $this->assertSame('private', cpt_test_get_category($root)['status']);
+        $this->assertSame('private', cpt_test_get_category($child)['status']);
+
+        $this->assertTrue(cpt_update_album($root, ['status' => 'public'], false, ['mode' => 'public', 'shared_user_ids' => []], 24));
+        $this->assertSame('public', cpt_test_get_category($root)['status']);
+        $this->assertSame('public', cpt_test_get_category($child)['status']);
+        $this->assertSame([], cpt_test_get_user_access($root));
+        $this->assertSame([], cpt_test_get_user_access($child));
+    }
+
+    public function testFailedRestoreLogsCriticalInvalidatesCacheAndShowsSafeMessage()
+    {
+        cpt_test_set_user(24);
+        $albumId = cpt_test_create_owned_album(24, 'public', 'Critical', '');
+
+        $GLOBALS['__cpt_test_fail_sql_pattern'] = '/^(INSERT INTO '.USER_ACCESS_TABLE.'|UPDATE '.CATEGORIES_TABLE." SET status='public' WHERE id=".(int) $albumId.' LIMIT 1$)/';
+        $result = cpt_handle_album_form([
+            $albumId => [
+                'visibility' => 'private',
+            ],
+        ], 24);
+        unset($GLOBALS['__cpt_test_fail_sql_pattern']);
+
+        $this->assertFalse($result);
+        $logs = cpt_test_log_messages();
+        $this->assertNotEmpty($logs);
+        $lastLog = $logs[array_key_last($logs)];
+        $this->assertSame('CRITICAL', $lastLog['level']);
+        $this->assertStringContainsString('privacy update restore failed for album '.$albumId, $lastLog['message']);
+        $this->assertSame(1, cpt_test_user_cache_invalidation_count());
+        $this->assertContains('Album privacy update failed. No changes were saved. (#'.$albumId.')', $GLOBALS['page']['errors']);
     }
 }

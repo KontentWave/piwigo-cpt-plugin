@@ -25,4 +25,23 @@ class AlbumUpdateSecurityTest extends TestCase
         $this->assertSame('Desc', $album['comment']);
         $this->assertSame('public', $album['status']);
     }
+
+    public function testUnknownAlbumColumnIsRejectedBeforeWrite()
+    {
+        $albumId = cpt_test_create_owned_album(3, 'public', 'Orig', 'Desc');
+
+        $result = cpt_update_album($albumId, [
+            'name' => 'Changed',
+            'bogus' => 'nope',
+        ]);
+
+        $this->assertFalse($result);
+        $album = cpt_test_get_category($albumId);
+        $this->assertSame('Orig', $album['name']);
+        $this->assertSame('Desc', $album['comment']);
+
+        $logs = cpt_test_log_messages();
+        $this->assertSame('ERROR', $logs[array_key_last($logs)]['level']);
+        $this->assertStringContainsString('unknown column bogus', $logs[array_key_last($logs)]['message']);
+    }
 }

@@ -24,6 +24,7 @@ if (!defined('IMAGES_TABLE')) { define('IMAGES_TABLE', $prefixeTable.'images'); 
 if (!defined('IMAGE_CATEGORY_TABLE')) { define('IMAGE_CATEGORY_TABLE', $prefixeTable.'image_category'); }
 if (!defined('USER_ACCESS_TABLE')) { define('USER_ACCESS_TABLE', $prefixeTable.'user_access'); }
 if (!defined('USERS_TABLE')) { define('USERS_TABLE', $prefixeTable.'users'); }
+if (!defined('USER_INFOS_TABLE')) { define('USER_INFOS_TABLE', $prefixeTable.'user_infos'); }
 if (!defined('USER_CACHE_CATEGORIES_TABLE')) { define('USER_CACHE_CATEGORIES_TABLE', $prefixeTable.'user_cache_categories'); }
 if (!defined('CPT_OWNER_PROFILE_TABLE')) { define('CPT_OWNER_PROFILE_TABLE', $prefixeTable.'cpt_owner_profile'); }
 if (!defined('CPT_MUNICIPALITY_TABLE')) { define('CPT_MUNICIPALITY_TABLE', $prefixeTable.'cpt_municipality'); }
@@ -32,10 +33,12 @@ if (!defined('CPT_MUNICIPALITY_TABLE')) { define('CPT_MUNICIPALITY_TABLE', $pref
 global $conf, $user, $page;
 $conf = $conf ?? [];
 $conf['guest_id'] = $conf['guest_id'] ?? 2;
+$conf['webmaster_id'] = $conf['webmaster_id'] ?? 1;
 $conf['user_fields'] = $conf['user_fields'] ?? [
     'id' => 'id',
     'username' => 'username',
     'email' => 'email',
+    'status' => 'status',
 ];
 $user = $user ?? [];
 $page = $page ?? ['infos'=>[], 'errors'=>[]];
@@ -170,20 +173,7 @@ function pwg_query($sql){
     if (!empty($GLOBALS['__cpt_test_fail_sql_pattern']) && preg_match($GLOBALS['__cpt_test_fail_sql_pattern'], $sqlTrim)) {
         return false;
     }
-    // Transaction simulation with snapshot semantics
-    if (preg_match('/^(BEGIN|START TRANSACTION)$/i', $sqlTrim)) {
-        $GLOBALS['__cpt_db_txn_snapshot'] = $GLOBALS['__cpt_db'];
-        return true;
-    }
-    if (strcasecmp($sqlTrim, 'COMMIT') === 0) {
-        unset($GLOBALS['__cpt_db_txn_snapshot']);
-        return true;
-    }
-    if (strcasecmp($sqlTrim, 'ROLLBACK') === 0) {
-        if (isset($GLOBALS['__cpt_db_txn_snapshot'])) {
-            $GLOBALS['__cpt_db'] = $GLOBALS['__cpt_db_txn_snapshot'];
-            unset($GLOBALS['__cpt_db_txn_snapshot']);
-        }
+    if (preg_match('/^(BEGIN|START TRANSACTION|COMMIT|ROLLBACK)$/i', $sqlTrim)) {
         return true;
     }
     // SELECT COUNT(id) FROM categories WHERE <ownership_column> = X
@@ -414,6 +404,9 @@ function pwg_query($sql){
                     continue;
                 }
             }
+            if (str_contains($sqlTrim, USER_INFOS_TABLE.'.status NOT IN (\'admin\',\'webmaster\')') && in_array(($u['status'] ?? 'normal'), ['admin', 'webmaster'], true)) {
+                continue;
+            }
             $rows[] = ['user_id' => $u['id'], 'username' => $u['username']];
         }
         usort($rows, fn($a, $b) => strcmp($a['username'], $b['username']));
@@ -546,8 +539,8 @@ function cpt_test_add_image(int $added_by): int {
     ];
     return $id;
 }
-function cpt_test_create_user(int $id, string $username): void {
-    $GLOBALS['__cpt_db']['users'][] = [ 'id' => $id, 'username' => $username ];
+function cpt_test_create_user(int $id, string $username, string $status='normal'): void {
+    $GLOBALS['__cpt_db']['users'][] = [ 'id' => $id, 'username' => $username, 'status' => $status ];
 }
 function cpt_test_link_image(int $image_id, int $category_id): void {
     $GLOBALS['__cpt_db']['image_category'][] = [ 'image_id'=>$image_id, 'category_id'=>$category_id ];
@@ -560,6 +553,11 @@ function cpt_test_set_user(int $id, bool $is_admin=false){
     if($is_admin){ $_SESSION['is_admin']=true; }
 }
 
+function cpt_test_set_webmaster_id(int $id): void {
+    global $conf;
+    $conf['webmaster_id'] = $id;
+}
+
 function cpt_test_set_guest_user(): void {
     global $user;
     $user = ['id' => 0, 'is_guest' => true, 'status' => 'guest'];
@@ -570,6 +568,7 @@ function cpt_test_reset_env(){
     $_SESSION=[];
     global $page; $page=['infos'=>[], 'errors'=>[]];
     global $conf; $conf['core_privacy_toggle_owner_profile_options'] = [];
+    $conf['webmaster_id'] = 1;
     global $template; $template = new CptTestTemplate();
     $GLOBALS['__cpt_test_pwg_token'] = 'test-token';
     $GLOBALS['__cpt_owner_profile_table_exists'] = true;
@@ -577,15 +576,17 @@ function cpt_test_reset_env(){
     if (array_key_exists('__cpt_test_owner_profile_plugin_available', $GLOBALS)) { unset($GLOBALS['__cpt_test_owner_profile_plugin_available']); }
     if (array_key_exists('__cpt_ownership_column_cache', $GLOBALS)) { unset($GLOBALS['__cpt_ownership_column_cache']); }
     unset($GLOBALS['__cpt_user_cache_purged'], $GLOBALS['__cpt_user_cache_dirty']);
-    unset($GLOBALS['__cpt_test_fail_sql_pattern'], $GLOBALS['__cpt_db_txn_snapshot']);
+    unset($GLOBALS['__cpt_test_fail_sql_pattern']);
     $GLOBALS['__cpt_user_cache_invalidations'] = 0;
     $GLOBALS['__cpt_user_cache_invalidate_full_flags'] = [];
+    $GLOBALS['__cpt_log_messages'] = [];
 }
 
 function cpt_test_was_user_cache_purged(): bool { return !empty($GLOBALS['__cpt_user_cache_purged']); }
 function cpt_test_clear_user_cache_purge_flag(): void { unset($GLOBALS['__cpt_user_cache_purged']); }
 function cpt_test_user_cache_invalidation_count(): int { return (int) ($GLOBALS['__cpt_user_cache_invalidations'] ?? 0); }
 function cpt_test_user_cache_invalidate_full_flags(): array { return $GLOBALS['__cpt_user_cache_invalidate_full_flags'] ?? []; }
+function cpt_test_log_messages(): array { return $GLOBALS['__cpt_log_messages'] ?? []; }
 function cpt_test_set_owner_profile_options(string $field_key, array $options): void {
     global $conf;
     $conf['core_privacy_toggle_owner_profile_options'][$field_key] = $options;

@@ -576,17 +576,25 @@ function cpt_update_album_representative(int $album_id, ?int $image_id, int $use
 	return true;
 }
 
+function cpt_get_webmaster_user_id(): int
+{
+	global $conf;
+
+	return isset($conf['webmaster_id']) ? (int) $conf['webmaster_id'] : 1;
+}
+
 function cpt_get_shareable_user_options(int $owner_user_id): array
 {
 	global $conf;
 
 	$guest_id = isset($conf['guest_id']) ? (int) $conf['guest_id'] : 0;
+	$webmaster_id = cpt_get_webmaster_user_id();
 	$options = [];
-	$query = 'SELECT '.USERS_TABLE.'.'.$conf['user_fields']['id'].' AS user_id, '.USERS_TABLE.'.'.$conf['user_fields']['username'].' AS username FROM '.USERS_TABLE.' WHERE '.USERS_TABLE.'.'.$conf['user_fields']['id'].' NOT IN (1,'.(int) $owner_user_id;
+	$query = 'SELECT '.USERS_TABLE.'.'.$conf['user_fields']['id'].' AS user_id, '.USERS_TABLE.'.'.$conf['user_fields']['username'].' AS username FROM '.USERS_TABLE.' LEFT JOIN '.USER_INFOS_TABLE.' ON '.USER_INFOS_TABLE.'.user_id = '.USERS_TABLE.'.'.$conf['user_fields']['id'].' WHERE '.USERS_TABLE.'.'.$conf['user_fields']['id'].' NOT IN ('.(int) $webmaster_id.','.(int) $owner_user_id;
 	if ($guest_id > 0) {
 		$query .= ','.$guest_id;
 	}
-	$query .= ') ORDER BY username';
+	$query .= ") AND (".USER_INFOS_TABLE.".status IS NULL OR ".USER_INFOS_TABLE.".status NOT IN ('admin','webmaster')) ORDER BY username";
 	$result = pwg_query($query);
 	if (!$result) {
 		return $options;
@@ -599,6 +607,7 @@ function cpt_get_shareable_user_options(int $owner_user_id): array
 
 function cpt_get_album_shared_user_ids(int $album_id, int $owner_user_id): array
 {
+	$webmaster_id = cpt_get_webmaster_user_id();
 	$shared_user_ids = [];
 	$result = pwg_query('SELECT user_id FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int) $album_id);
 	if (!$result) {
@@ -606,7 +615,7 @@ function cpt_get_album_shared_user_ids(int $album_id, int $owner_user_id): array
 	}
 	while ($row = pwg_db_fetch_assoc($result)) {
 		$user_id = (int) ($row['user_id'] ?? 0);
-		if ($user_id <= 0 || $user_id === 1 || $user_id === $owner_user_id) {
+		if ($user_id <= 0 || $user_id === $webmaster_id || $user_id === $owner_user_id) {
 			continue;
 		}
 		$shared_user_ids[] = $user_id;
@@ -624,6 +633,29 @@ function cpt_get_album_visibility_mode(int $album_id, int $owner_user_id): strin
 
 	$shared_user_ids = cpt_get_album_shared_user_ids($album_id, $owner_user_id);
 	return empty($shared_user_ids) ? 'private' : 'shared';
+}
+
+function cpt_get_album_permission_options(int $album_id, int $owner_user_id): array
+{
+	$visibility = cpt_get_album_visibility_mode($album_id, $owner_user_id);
+	if ($visibility === 'shared') {
+		return [
+			'mode' => 'shared',
+			'shared_user_ids' => cpt_get_album_shared_user_ids($album_id, $owner_user_id),
+		];
+	}
+
+	if ($visibility === 'private') {
+		return [
+			'mode' => 'private',
+			'shared_user_ids' => [],
+		];
+	}
+
+	return [
+		'mode' => 'public',
+		'shared_user_ids' => [],
+	];
 }
 
 /**
@@ -1060,12 +1092,13 @@ function cpt_get_descendant_album_ids(int $album_id): array
 
 function cpt_should_propagate_private_status_to_descendants(int $album_id, array $fields, array $permission_options = [], ?int $owner_user_id = null): bool
 {
-	if (($fields['status'] ?? null) !== 'private') {
+	$status = $fields['status'] ?? null;
+	if (!in_array($status, ['private', 'public'], true)) {
 		return false;
 	}
 
-	$mode = $permission_options['mode'] ?? 'private';
-	if ($mode !== 'private') {
+	$mode = $permission_options['mode'] ?? ($status === 'private' ? 'private' : 'public');
+	if (!in_array($mode, ['private', 'shared', 'public'], true)) {
 		return false;
 	}
 
@@ -1083,39 +1116,10 @@ function cpt_should_propagate_private_status_to_descendants(int $album_id, array
 
 function cpt_sync_album_visibility_permissions(int $album_id, string $new_status, array $permission_options = [], ?int $owner_user_id = null, bool $debug = false): ?bool
 {
-	$mode = $permission_options['mode'] ?? ($new_status === 'private' ? 'private' : 'public');
-	$shared_user_ids = [];
-	if (!empty($permission_options['shared_user_ids']) && is_array($permission_options['shared_user_ids'])) {
-		$shared_user_ids = array_values(array_unique(array_map('intval', $permission_options['shared_user_ids'])));
-	}
-
 	$current_user_ids = cpt_get_album_access_user_ids($album_id);
+	$allowed_user_ids = cpt_get_target_album_access_user_ids($album_id, $new_status, $permission_options, $owner_user_id);
 
 	if ($new_status === 'private') {
-		$owner_id = $owner_user_id;
-		if ($owner_id === null) {
-			$owner_id = cpt_get_album_effective_owner_id($album_id);
-		}
-		if ($owner_id === null) {
-			$resImg = pwg_query('SELECT i.added_by FROM '.IMAGE_CATEGORY_TABLE.' ic INNER JOIN '.IMAGES_TABLE.' i ON i.id=ic.image_id WHERE ic.category_id='.(int) $album_id.' ORDER BY i.id ASC LIMIT 1');
-			if ($resImg) {
-				$rowI = pwg_db_fetch_assoc($resImg);
-				if ($rowI) {
-					$owner_id = (int) $rowI['added_by'];
-				}
-			}
-		}
-
-		$allowed_user_ids = [1];
-		if ($owner_id !== null && $owner_id > 0) {
-			$allowed_user_ids[] = (int) $owner_id;
-		}
-		if ($mode === 'shared') {
-			$allowed_user_ids = array_merge($allowed_user_ids, $shared_user_ids);
-		}
-		$allowed_user_ids = array_values(array_unique(array_filter($allowed_user_ids, fn($id) => (int) $id > 0)));
-		sort($allowed_user_ids);
-
 		if ($allowed_user_ids === $current_user_ids) {
 			// Access rows already match the target set — nothing to write.
 			return false;
@@ -1158,6 +1162,46 @@ function cpt_sync_album_visibility_permissions(int $album_id, string $new_status
 	return false;
 }
 
+function cpt_get_target_album_access_user_ids(int $album_id, string $new_status, array $permission_options = [], ?int $owner_user_id = null): array
+{
+	if ($new_status !== 'private') {
+		return [];
+	}
+
+	$mode = $permission_options['mode'] ?? 'private';
+	$shared_user_ids = [];
+	if (!empty($permission_options['shared_user_ids']) && is_array($permission_options['shared_user_ids'])) {
+		$shared_user_ids = array_values(array_unique(array_map('intval', $permission_options['shared_user_ids'])));
+	}
+
+	$owner_id = $owner_user_id;
+	if ($owner_id === null) {
+		$owner_id = cpt_get_album_effective_owner_id($album_id);
+	}
+	if ($owner_id === null) {
+		$resImg = pwg_query('SELECT i.added_by FROM '.IMAGE_CATEGORY_TABLE.' ic INNER JOIN '.IMAGES_TABLE.' i ON i.id=ic.image_id WHERE ic.category_id='.(int) $album_id.' ORDER BY i.id ASC LIMIT 1');
+		if ($resImg) {
+			$rowI = pwg_db_fetch_assoc($resImg);
+			if ($rowI) {
+				$owner_id = (int) $rowI['added_by'];
+			}
+		}
+	}
+
+	$allowed_user_ids = [cpt_get_webmaster_user_id()];
+	if ($owner_id !== null && $owner_id > 0) {
+		$allowed_user_ids[] = (int) $owner_id;
+	}
+	if ($mode === 'shared') {
+		$allowed_user_ids = array_merge($allowed_user_ids, $shared_user_ids);
+	}
+
+	$allowed_user_ids = array_values(array_unique(array_filter($allowed_user_ids, fn($id) => (int) $id > 0)));
+	sort($allowed_user_ids);
+
+	return $allowed_user_ids;
+}
+
 /**
  * Current user ids holding a user_access row for the album, sorted.
  */
@@ -1187,17 +1231,11 @@ function cpt_private_root_has_nonprivate_descendants(int $album_id): bool
 
 function cpt_reconcile_private_owner_root_descendants_for_user(int $user_id): bool
 {
-	static $checked_user_ids = [];
-
 	if ($user_id <= 0) {
 		return false;
 	}
 
-	if (array_key_exists($user_id, $checked_user_ids)) {
-		return $checked_user_ids[$user_id];
-	}
-
-	$checked_user_ids[$user_id] = false;
+	$reconciled = false;
 	foreach (cpt_fetch_albums_owned_by($user_id) as $album) {
 		$album_id = (int) ($album['id'] ?? 0);
 		if ($album_id <= 0 || empty($album['is_effective_owner_root'])) {
@@ -1212,14 +1250,14 @@ function cpt_reconcile_private_owner_root_descendants_for_user(int $user_id): bo
 			continue;
 		}
 
-		if (cpt_update_album($album_id, ['status' => 'private'], false, ['mode' => 'private', 'shared_user_ids' => []], $user_id)) {
-			$checked_user_ids[$user_id] = true;
+		if (cpt_update_album($album_id, ['status' => 'private'], false, cpt_get_album_permission_options($album_id, $user_id), $user_id)) {
+			$reconciled = true;
 		}
 	}
 
 	cpt_flush_user_cache_invalidation();
 
-	return $checked_user_ids[$user_id];
+	return $reconciled;
 }
 
 /**
@@ -1236,6 +1274,13 @@ function cpt_get_album_explicit_owner_id(int $album_id): ?int
 function cpt_update_album(int $album_id, array $fields, bool $debug=false, array $permission_options = [], ?int $owner_user_id = null): bool
 {
 	if (empty($fields)) { return false; }
+	$allowed_columns = ['name' => true, 'comment' => true, 'status' => true];
+	foreach (array_keys($fields) as $field_name) {
+		if (!isset($allowed_columns[$field_name])) {
+			cpt_log_message('error', 'album update rejected for album '.$album_id.': unknown column '.$field_name);
+			return false;
+		}
+	}
 	$old_status = null;
 	$privacy_target_album_ids = [$album_id];
 	$is_privacy_update = isset($fields['status']);
@@ -1247,22 +1292,24 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false, array
 			$privacy_target_album_ids = array_merge($privacy_target_album_ids, cpt_get_descendant_album_ids($album_id));
 		}
 	}
+	$snapshot = $is_privacy_update ? cpt_capture_album_update_snapshot($album_id, $fields, $privacy_target_album_ids) : null;
+	if ($is_privacy_update && $snapshot === null) {
+		cpt_log_message('error', 'privacy update aborted for album '.$album_id.': failed to capture pre-write snapshot');
+		return false;
+	}
 	$assignments = [];
 	foreach ($fields as $col => $val) {
 		$assignments[] = $col . "='" . pwg_db_real_escape_string($val) . "'";
 	}
 	$sql = 'UPDATE '.CATEGORIES_TABLE.' SET '.implode(',', $assignments).' WHERE id='.(int)$album_id.' LIMIT 1';
 
-	// Privacy transitions span several statements (parent + descendants +
-	// user_access sync); run them atomically so a mid-sequence failure cannot
-	// leave a private album without access rows or a private root with public
-	// descendants (audit R2).
-	$in_transaction = $is_privacy_update && cpt_db_begin();
-
 	$result = pwg_query($sql);
 	if ($debug) { global $page; $page['infos'][] = '[CPT debug] SQL: '.htmlspecialchars($sql).' result='.($result?'ok':'fail'); }
 	if (!$result) {
-		return cpt_update_album_fail($in_transaction, $album_id, 'album row update failed');
+		return cpt_update_album_fail($snapshot, $album_id, 'album row update failed');
+	}
+	if (!cpt_album_fields_match($album_id, $fields)) {
+		return cpt_update_album_fail($snapshot, $album_id, 'album row verification failed');
 	}
 
 	if (!$is_privacy_update) {
@@ -1278,7 +1325,10 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false, array
 
 			$descendant_sql = 'UPDATE '.CATEGORIES_TABLE." SET status='".$escaped_status."' WHERE id=".(int) $target_album_id.' LIMIT 1';
 			if (!pwg_query($descendant_sql)) {
-				return cpt_update_album_fail($in_transaction, $album_id, 'descendant propagation failed for album '.$target_album_id);
+				return cpt_update_album_fail($snapshot, $album_id, 'descendant propagation failed for album '.$target_album_id);
+			}
+			if (cpt_get_album_status($target_album_id) !== (string) $fields['status']) {
+				return cpt_update_album_fail($snapshot, $album_id, 'descendant verification failed for album '.$target_album_id);
 			}
 			if ($debug) {
 				global $page;
@@ -1292,21 +1342,20 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false, array
 	if ($old_status !== $fields['status'] || !empty($permission_options) || count($privacy_target_album_ids) > 1) {
 		$new_status = $fields['status'];
 		foreach ($privacy_target_album_ids as $target_album_id) {
-			$target_permission_options = $target_album_id === $album_id
+			$target_permission_options = $new_status === 'private'
 				? $permission_options
-				: ['mode' => 'private', 'shared_user_ids' => []];
+				: ['mode' => 'public', 'shared_user_ids' => []];
 			$sync_result = cpt_sync_album_visibility_permissions($target_album_id, $new_status, $target_permission_options, $owner_user_id, $debug);
 			if ($sync_result === null) {
-				return cpt_update_album_fail($in_transaction, $album_id, 'user_access sync failed for album '.$target_album_id);
+				return cpt_update_album_fail($snapshot, $album_id, 'user_access sync failed for album '.$target_album_id);
+			}
+			if (!cpt_album_access_matches($target_album_id, cpt_get_target_album_access_user_ids($target_album_id, $new_status, $target_permission_options, $owner_user_id))) {
+				return cpt_update_album_fail($snapshot, $album_id, 'user_access verification failed for album '.$target_album_id);
 			}
 			if ($sync_result === true) {
 				$permissions_changed = true;
 			}
 		}
-	}
-
-	if ($in_transaction && !cpt_db_commit()) {
-		return cpt_update_album_fail(true, $album_id, 'commit failed');
 	}
 
 	if ($old_status !== $fields['status'] || $permissions_changed) {
@@ -1320,36 +1369,214 @@ function cpt_update_album(int $album_id, array $fields, bool $debug=false, array
 }
 
 /**
- * Shared failure path for cpt_update_album(): roll back and log loudly.
+	* Shared failure path for cpt_update_album(): restore the captured snapshot
+	* and invalidate caches if restoration itself cannot be verified.
  */
-function cpt_update_album_fail(bool $in_transaction, int $album_id, string $reason): bool
+function cpt_update_album_fail(?array $snapshot, int $album_id, string $reason): bool
 {
-	if ($in_transaction) {
-		cpt_db_rollback();
+	if ($snapshot !== null) {
+		$restored = cpt_restore_album_update_snapshot($snapshot);
+		if (!$restored) {
+			cpt_log_message('critical', 'privacy update restore failed for album '.$album_id.': '.$reason);
+			cpt_mark_user_cache_dirty();
+			cpt_flush_user_cache_invalidation();
+			return false;
+		}
+		cpt_log_message('error', 'privacy update aborted for album '.$album_id.': '.$reason.' (snapshot restored)');
+		return false;
 	}
-	error_log('[core_privacy_toggle] privacy update aborted for album '.$album_id.': '.$reason.($in_transaction ? ' (rolled back)' : ' (no transaction support — manual check advised)'));
+	cpt_log_message('error', 'privacy update aborted for album '.$album_id.': '.$reason);
 	return false;
 }
 
 /**
- * Transaction helpers. pwg_query() proxies the raw connection, so plain
- * BEGIN/COMMIT/ROLLBACK statements are sufficient; on storage engines
- * without transaction support these are silent no-ops and the verified,
- * ordered sequence in cpt_update_album() is the fallback safety.
+	* Capture the current root fields, descendant statuses, and user_access rows
+	* before a multi-step privacy transition on non-transactional tables.
  */
-function cpt_db_begin(): bool
+function cpt_capture_album_update_snapshot(int $album_id, array $fields, array $privacy_target_album_ids): ?array
 {
-	return (bool) pwg_query('BEGIN');
+	$root_state = cpt_get_album_editable_state($album_id);
+	if ($root_state === null) {
+		return null;
+	}
+
+	$root_fields = [];
+	foreach (array_keys($fields) as $field_name) {
+		if (array_key_exists($field_name, $root_state)) {
+			$root_fields[$field_name] = $root_state[$field_name];
+		}
+	}
+
+	$statuses = [];
+	$access_rows = [];
+	foreach (array_values(array_unique(array_map('intval', $privacy_target_album_ids))) as $target_album_id) {
+		if ($target_album_id <= 0) {
+			continue;
+		}
+		$status = cpt_get_album_status($target_album_id);
+		if ($status === null) {
+			return null;
+		}
+		$statuses[$target_album_id] = $status;
+		$access_rows[$target_album_id] = cpt_get_album_access_user_ids($target_album_id);
+	}
+
+	return [
+		'album_id' => $album_id,
+		'root_fields' => $root_fields,
+		'statuses' => $statuses,
+		'access_rows' => $access_rows,
+	];
 }
 
-function cpt_db_commit(): bool
+function cpt_restore_album_update_snapshot(array $snapshot): bool
 {
-	return (bool) pwg_query('COMMIT');
+	$album_id = (int) ($snapshot['album_id'] ?? 0);
+	if ($album_id <= 0) {
+		return false;
+	}
+
+	$root_fields = is_array($snapshot['root_fields'] ?? null) ? $snapshot['root_fields'] : [];
+	if (!empty($root_fields)) {
+		$restore_assignments = [];
+		foreach ($root_fields as $field_name => $field_value) {
+			$restore_assignments[] = $field_name."='".pwg_db_real_escape_string((string) $field_value)."'";
+		}
+		$restore_sql = 'UPDATE '.CATEGORIES_TABLE.' SET '.implode(',', $restore_assignments).' WHERE id='.(int) $album_id.' LIMIT 1';
+		if (!pwg_query($restore_sql) || !cpt_album_fields_match($album_id, $root_fields)) {
+			return false;
+		}
+	}
+
+	$statuses = is_array($snapshot['statuses'] ?? null) ? $snapshot['statuses'] : [];
+	foreach ($statuses as $target_album_id => $status) {
+		$target_album_id = (int) $target_album_id;
+		if ($target_album_id === $album_id && array_key_exists('status', $root_fields)) {
+			continue;
+		}
+
+		$restore_status_sql = 'UPDATE '.CATEGORIES_TABLE." SET status='".pwg_db_real_escape_string((string) $status)."' WHERE id=".$target_album_id.' LIMIT 1';
+		if (!pwg_query($restore_status_sql) || cpt_get_album_status($target_album_id) !== (string) $status) {
+			return false;
+		}
+	}
+
+	$access_rows = is_array($snapshot['access_rows'] ?? null) ? $snapshot['access_rows'] : [];
+	foreach ($access_rows as $target_album_id => $user_ids) {
+		if (!cpt_restore_album_access_user_ids((int) $target_album_id, is_array($user_ids) ? $user_ids : [])) {
+			return false;
+		}
+	}
+
+	return cpt_verify_album_update_snapshot($snapshot);
 }
 
-function cpt_db_rollback(): void
+function cpt_verify_album_update_snapshot(array $snapshot): bool
 {
-	pwg_query('ROLLBACK');
+	$album_id = (int) ($snapshot['album_id'] ?? 0);
+	if ($album_id <= 0) {
+		return false;
+	}
+
+	$root_fields = is_array($snapshot['root_fields'] ?? null) ? $snapshot['root_fields'] : [];
+	if (!cpt_album_fields_match($album_id, $root_fields)) {
+		return false;
+	}
+
+	foreach (($snapshot['statuses'] ?? []) as $target_album_id => $status) {
+		if (cpt_get_album_status((int) $target_album_id) !== (string) $status) {
+			return false;
+		}
+	}
+
+	foreach (($snapshot['access_rows'] ?? []) as $target_album_id => $user_ids) {
+		if (!cpt_album_access_matches((int) $target_album_id, is_array($user_ids) ? $user_ids : [])) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+function cpt_restore_album_access_user_ids(int $album_id, array $user_ids): bool
+{
+	if (!pwg_query('DELETE FROM '.USER_ACCESS_TABLE.' WHERE cat_id='.(int) $album_id)) {
+		return false;
+	}
+
+	$user_ids = array_values(array_unique(array_map('intval', $user_ids)));
+	sort($user_ids);
+	if (!empty($user_ids)) {
+		$insert_values = [];
+		foreach ($user_ids as $user_id) {
+			$insert_values[] = '('.$user_id.','.(int) $album_id.')';
+		}
+		if (!pwg_query('INSERT INTO '.USER_ACCESS_TABLE.' (user_id, cat_id) VALUES '.implode(',', $insert_values))) {
+			return false;
+		}
+	}
+
+	return cpt_album_access_matches($album_id, $user_ids);
+}
+
+function cpt_album_fields_match(int $album_id, array $expected_fields): bool
+{
+	if (empty($expected_fields)) {
+		return true;
+	}
+
+	$current = cpt_get_album_editable_state($album_id);
+	if ($current === null) {
+		return false;
+	}
+
+	foreach ($expected_fields as $field_name => $expected_value) {
+		if (!array_key_exists($field_name, $current) || (string) $current[$field_name] !== (string) $expected_value) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+function cpt_get_album_editable_state(int $album_id): ?array
+{
+	$result = pwg_query('SELECT id, name, comment, status FROM '.CATEGORIES_TABLE.' WHERE id='.(int) $album_id.' LIMIT 1');
+	if (!$result) {
+		return null;
+	}
+
+	$row = pwg_db_fetch_assoc($result);
+	if (!$row) {
+		return null;
+	}
+
+	return [
+		'name' => (string) ($row['name'] ?? ''),
+		'comment' => (string) ($row['comment'] ?? ''),
+		'status' => (string) ($row['status'] ?? ''),
+	];
+}
+
+function cpt_album_access_matches(int $album_id, array $expected_user_ids): bool
+{
+	$expected_user_ids = array_values(array_unique(array_map('intval', $expected_user_ids)));
+	sort($expected_user_ids);
+
+	return cpt_get_album_access_user_ids($album_id) === $expected_user_ids;
+}
+
+function cpt_log_message(string $level, string $message): void
+{
+	$normalized_level = strtoupper(trim($level));
+	if (!isset($GLOBALS['__cpt_log_messages']) || !is_array($GLOBALS['__cpt_log_messages'])) {
+		$GLOBALS['__cpt_log_messages'] = [];
+	}
+	$GLOBALS['__cpt_log_messages'][] = [
+		'level' => $normalized_level,
+		'message' => $message,
+	];
+	error_log('[core_privacy_toggle]['.$normalized_level.'] '.$message);
 }
 
 /**
